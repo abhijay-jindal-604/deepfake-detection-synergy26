@@ -1,0 +1,3 @@
+base: p2_ema.yaml
+description: "label smoothing 0.05. Hypothesis: robustness to label noise, better calibration; AUC tie likely."
+loss: {label_smoothing: 0.05}

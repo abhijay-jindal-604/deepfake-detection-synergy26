@@ -1,0 +1,9 @@
+# PHASE2 steps 3-4 on the p0.9 recipe (step 2 decision). Comparisons: p2_ema vs p2_corr_p09; others vs p2_ema. Ordered by priority (cut order last).
+runs:
+  - {config: configs/p2/p2_ema.yaml,        folds: "0,1,2", timeout_min: 40}
+  - {config: configs/p2/p2_ep8.yaml,        folds: "0,1,2", timeout_min: 30}
+  - {config: configs/p2/p2_ls05.yaml,       folds: "0,1,2", timeout_min: 40}
+  - {config: configs/p2/p2_dp02.yaml,       folds: "0,1,2", timeout_min: 40}
+  - {config: configs/p2/p2_ep20_lr1e4.yaml, folds: "0,1,2", timeout_min: 60}
+  - {config: configs/p2/p2_ls10.yaml,       folds: "0,1,2", timeout_min: 40}
+  - {config: configs/p2/p2_drop05.yaml,     folds: "0,1,2", timeout_min: 40}

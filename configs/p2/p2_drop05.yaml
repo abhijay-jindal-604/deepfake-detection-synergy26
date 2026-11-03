@@ -1,0 +1,3 @@
+base: p2_ema.yaml
+description: "head dropout 0.5. Hypothesis: tie."
+model: {drop_rate: 0.5}

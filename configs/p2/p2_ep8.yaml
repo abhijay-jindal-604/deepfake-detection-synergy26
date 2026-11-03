@@ -1,0 +1,3 @@
+base: p2_ema.yaml
+description: "8 epochs (with EMA). Hypothesis: shorter cosine ends near the sweet spot; 1/3 cheaper."
+train: {epochs: 8}

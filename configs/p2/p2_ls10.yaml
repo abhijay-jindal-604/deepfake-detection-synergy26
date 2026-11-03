@@ -1,0 +1,3 @@
+base: p2_ema.yaml
+description: "label smoothing 0.10."
+loss: {label_smoothing: 0.10}

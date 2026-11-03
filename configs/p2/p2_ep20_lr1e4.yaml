@@ -1,0 +1,4 @@
+base: p2_ema.yaml
+description: "20 epochs, lr_backbone 1e-4 (with EMA). Hypothesis: gentler fine-tuning helps held-out; 1.7x cost."
+train: {epochs: 20}
+optim: {lr_backbone: 1.0e-4}
