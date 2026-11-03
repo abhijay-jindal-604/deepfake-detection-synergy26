@@ -1,0 +1,12 @@
+# large / generated
+resources/
+outputs/
+.venv/
+*.pt
+*.pth
+*.ckpt
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
