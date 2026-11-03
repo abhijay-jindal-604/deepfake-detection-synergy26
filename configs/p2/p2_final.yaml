@@ -1,0 +1,4 @@
+base: p2_ema.yaml
+description: "Phase 2 recipe: B0 + seen corruptions p0.9 + EMA (0.998, warmup) + drop_path 0.2 + label smoothing 0.10, 12 epochs, last EMA ckpt"
+model: {drop_path_rate: 0.2}
+loss: {label_smoothing: 0.10}

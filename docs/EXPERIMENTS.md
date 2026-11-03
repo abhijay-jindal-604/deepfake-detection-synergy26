@@ -63,3 +63,19 @@ Selection score = 0.5 x clean AUC + 0.5 x mean val-C AUC (all corruptions).
 | 2026-11-04 | p2_ls05/fold2 | efficientnet_b0 | label smoothing 0.05. Hypothesis: robustness to label noise, better calibration; AUC tie likely. | 0.8916 | 0.8829 | 0.8742 | 0.7433 (pixelate@3) | 0.8859 | last ep 12 EMA (best ep 4). |
 | 2026-11-04 | p2_dp02/fold0 | efficientnet_b0 | drop_path_rate 0.2 (stochastic depth). Hypothesis: +0.002-0.006. | 0.8847 | 0.8678 | 0.8578 | 0.7173 (pixelate@3) | 0.8747 | last ep 12 EMA (best ep 5). |
 | 2026-11-04 | P2 step 4: reject label smoothing 0.05 | TIE (−0.0005; clean −0.0010, held-out −0.0001): no measurable effect; calibration is handled by per-member temperature scaling in ensemble.py anyway |
+| 2026-11-04 | p2_dp02/fold1 | efficientnet_b0 | drop_path_rate 0.2 (stochastic depth). Hypothesis: +0.002-0.006. | 0.9079 | 0.8923 | 0.8757 | 0.7536 (pixelate@3) | 0.8975 | last ep 12 EMA (best ep 6). |
+| 2026-11-04 | p2_dp02/fold2 | efficientnet_b0 | drop_path_rate 0.2 (stochastic depth). Hypothesis: +0.002-0.006. | 0.9063 | 0.8923 | 0.8851 | 0.7415 (pixelate@3) | 0.8982 | last ep 12 EMA (best ep 4). |
+| 2026-11-04 | p2_ep20_lr1e4/fold0 | efficientnet_b0 | 20 epochs, lr_backbone 1e-4 (with EMA). Hypothesis: gentler fine-tuning helps held-out; 1.7x cost. | 0.8775 | 0.8557 | 0.8154 | 0.6565 (shot_noise@3) | 0.8602 | last ep 20 EMA (best ep 8). |
+| 2026-11-04 | p2_ep20_lr1e4/fold1 | efficientnet_b0 | 20 epochs, lr_backbone 1e-4 (with EMA). Hypothesis: gentler fine-tuning helps held-out; 1.7x cost. | 0.8965 | 0.8775 | 0.8423 | 0.6924 (speckle_noise@3) | 0.8814 | last ep 20 EMA (best ep 5). |
+| 2026-11-04 | p2_ep20_lr1e4/fold2 | efficientnet_b0 | 20 epochs, lr_backbone 1e-4 (with EMA). Hypothesis: gentler fine-tuning helps held-out; 1.7x cost. | 0.8932 | 0.8761 | 0.8463 | 0.7114 (shot_noise@3) | 0.8799 | last ep 20 EMA (best ep 5). |
+| 2026-11-04 | p2_ls10/fold0 | efficientnet_b0 | label smoothing 0.10. | 0.8839 | 0.8657 | 0.8497 | 0.7350 (pixelate@3) | 0.8723 | last ep 12 EMA (best ep 4). |
+| 2026-11-04 | p2_ls10/fold1 | efficientnet_b0 | label smoothing 0.10. | 0.9040 | 0.8886 | 0.8770 | 0.7557 (pixelate@3) | 0.8945 | last ep 12 EMA (best ep 5). |
+| 2026-11-04 | p2_ls10/fold2 | efficientnet_b0 | label smoothing 0.10. | 0.8961 | 0.8850 | 0.8764 | 0.7427 (pixelate@3) | 0.8892 | last ep 12 EMA (best ep 4). |
+| 2026-11-04 | p2_drop05/fold0 | efficientnet_b0 | head dropout 0.5. Hypothesis: tie. | 0.8807 | 0.8629 | 0.8458 | 0.7188 (pixelate@3) | 0.8691 | last ep 12 EMA (best ep 4). |
+| 2026-11-04 | p2_drop05/fold1 | efficientnet_b0 | head dropout 0.5. Hypothesis: tie. | 0.9019 | 0.8877 | 0.8741 | 0.7544 (pixelate@3) | 0.8926 | last ep 12 EMA (best ep 6). |
+| 2026-11-04 | p2_drop05/fold2 | efficientnet_b0 | head dropout 0.5. Hypothesis: tie. | 0.8961 | 0.8851 | 0.8754 | 0.7447 (pixelate@3) | 0.8891 | last ep 12 EMA (best ep 3). |
+| 2026-11-04 | P2 step 4: **adopt `drop_path_rate: 0.2`** | **ADOPT** by the rule: +0.0074 (3/3 folds +), clean +0.0076, held-out +0.0078. First change that clears the 0.006 noise threshold |
+| 2026-11-04 | P2 step 3: reject 20 epochs @ lr 1e-4 | **REJECT**: −0.0088; held-out −0.030 on 3/3 folds. Gentler fine-tuning made the B0 *less* robust to unseen corruptions (opposite of the hypothesis); suggests the corruption-aug signal needs a full-strength LR to be learned |
+| 2026-11-04 | P2 step 4: **adopt label smoothing 0.10** | TIE (+0.0026 < 0.006) but Δ>0 on 3/3 folds on clean, seen and held-out; equal cost, tie rule → higher held-out (+0.0026). (LS 0.05 showed nothing) |
+| 2026-11-04 | P2 step 4: reject head dropout 0.5 | TIE (+0.0009), held-out ±0: keep 0.3 |
+| 2026-11-04 | P2 step 5: mixup not run (cut) | PHASE2 cut order (mixup is 2nd to cut); expected tie/negative; step 6 res288 also cut → Phase 3 runs B4 at 288? No: B4@320 kept as planned and decided by the PHASE3 LR sanity runs |

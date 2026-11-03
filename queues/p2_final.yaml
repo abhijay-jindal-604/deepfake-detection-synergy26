@@ -1,0 +1,3 @@
+# PHASE2 step 7: confirm the recipe on all 5 folds (folds 0-2 also give the paired check vs p2_ema).
+runs:
+  - {config: configs/p2/p2_final.yaml, folds: "all", timeout_min: 75}
