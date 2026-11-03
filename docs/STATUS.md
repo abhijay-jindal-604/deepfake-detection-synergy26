@@ -11,7 +11,7 @@ Phase 2: §2 code done and committed (reproduction passed). §3 steps 1-2 runnin
 - Subagent: PHASE3 §2 models.py (input_size upsample, generalised head zero-init, LLRD) + configs/p3 step-1 LR configs (opus, CPU only).
 
 ## Pending user decisions
-- GPU `power/control` was still `auto` at queue start (user did not confirm setting it `on`); queue stops cleanly if CUDA disappears.
+- none. (power/control set to `on` by user 23:3x, confirmed.)
 
 ## Next 3 actions (4 Nov morning)
 1. Read queue log; compare.py: seed43 vs ref (noise floor -> threshold), p07/p09 vs ref, weighted/cont/extra vs ref; record verdicts.
