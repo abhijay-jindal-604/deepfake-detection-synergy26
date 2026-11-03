@@ -2,11 +2,22 @@
 
   python -m dfd.evaluate --ckpt outputs/runs/<run>/fold0/best.pt --data_root <root>
   -> writes into outputs/runs/<run>/fold0/eval_best_{raw|ema}/
+
+Pair / non-pair breakdown (PHASE4 §6.2, pair_breakdown()): computed from the OOF probabilities, no extra
+inference. Definitions:
+  pair group   = a source-photo group (data/groups.csv group_id) holding at least one real-fake pair from
+                 data/masks_meta.csv whose ECC alignment passed, i.e. accepted == 1 or reject_reason not in
+                 {align, geometry, coverage} (later quality gates such as low_cc / area_* / outside_d may
+                 still have rejected its mask: the images ARE the same photo, the mask is just unusable);
+  pair fake    = a val fake in a pair group; non-pair fake = every other val fake;
+  auc_pair     = AUC over (all val reals + pair fakes); auc_nonpair = AUC over (all val reals + non-pair fakes).
+If masks_meta.csv is absent, pair groups fall back to groups containing both labels (source = 'groups').
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -15,9 +26,52 @@ import torch
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_curve, roc_auc_score
 
 from .corruptions import ALL, HELD_OUT, SEEN, SEVERITIES
-from .data import FaceDataset, ValCDataset, load_folds, make_loader
+from .data import GROUPS_CSV, MASKS_META, FaceDataset, ValCDataset, load_folds, make_loader
 from .models import build_model
 from .paths import resolve_data_root
+
+
+ALIGN_FAIL = {"align", "geometry", "coverage"}
+
+
+def default_device() -> str:
+    """$DFD_DEVICE if set (e.g. cpu for tests while the GPU is busy), else cuda when available."""
+    return os.environ.get("DFD_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def pair_groups(meta_csv: Path = MASKS_META, groups_csv: Path = GROUPS_CSV) -> tuple[set[int], str]:
+    """Group ids of 'pair groups' (see module docstring) and the definition source used."""
+    if Path(meta_csv).is_file():
+        meta = pd.read_csv(meta_csv, keep_default_na=False)
+        ok = (meta.accepted.astype(int) == 1) | ~meta.reject_reason.astype(str).isin(ALIGN_FAIL)
+        return set(meta.loc[ok, "group_id"].astype(int)), "masks_meta"
+    g = pd.read_csv(groups_csv)
+    mixed = g.groupby("group_id").label.nunique()
+    return set(mixed.index[mixed > 1].astype(int)), "groups"
+
+
+def pair_breakdown(image_ids, y: np.ndarray, p: np.ndarray) -> dict:
+    """AUC on (reals + pair fakes) and (reals + non-pair fakes) for one fold's OOF predictions."""
+    pg, source = pair_groups()
+    g = pd.read_csv(GROUPS_CSV, dtype={"image_id": str}).set_index("image_id").group_id
+    gid = g.reindex(pd.Series(image_ids).astype(str)).to_numpy()
+    y = np.asarray(y).astype(int)
+    p = np.asarray(p)
+    in_pair = np.array([int(k) in pg if k == k else False for k in gid])
+    real, fake = y == 0, y == 1
+
+    def auc(sel):
+        yy = y[sel]
+        return float(roc_auc_score(yy, p[sel])) if 0 < yy.sum() < len(yy) else None
+
+    return {
+        "auc_pair": auc(real | (fake & in_pair)),
+        "auc_nonpair": auc(real | (fake & ~in_pair)),
+        "n_pair_fakes": int((fake & in_pair).sum()),
+        "n_nonpair_fakes": int((fake & ~in_pair).sum()),
+        "n_reals": int(real.sum()),
+        "source": source,
+    }
 
 
 @torch.inference_mode()
@@ -108,7 +162,7 @@ def full_eval(
     write_json: bool = True,
 ) -> dict:
     """Clean + val-C metrics. Writes eval.txt, valc_probs.npz and (if write_json) eval.json into out_dir."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = default_device()
     loader = make_loader(FaceDataset(df_val, root), batch_size, train=False, workers=workers)
     p, y = predict(model, loader, device)
     clean = clean_metrics(y, p)
@@ -146,7 +200,7 @@ def main() -> None:
     use_ema = args.weights == "ema" or (args.weights == "auto" and "state_dict_ema" in ck)
     model.load_state_dict(ck["state_dict_ema"] if use_ema else ck["state_dict"])
     print(f"weights: {'ema' if use_ema else 'raw'} (epoch {ck.get('epoch')})")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = default_device()
     model.to(device).to(memory_format=torch.channels_last)
     folds = load_folds()
     df_val = folds[folds.fold == ck["fold"]].reset_index(drop=True)

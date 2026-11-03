@@ -1,0 +1,5 @@
+base: ../p2/p2_ref.yaml   # TODO: rebase onto ../p2/p2_final.yaml once Phase 2 decides (PHASE4 §5 diffs are vs p2_final)
+description: "P4: auxiliary mask head (stride-16, lambda 0.2) on accepted pair masks + real zero-masks"
+model: {mask_head: true}
+loss: {mask_weight: 0.2}
+data: {pair_masks: true}

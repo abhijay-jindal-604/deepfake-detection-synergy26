@@ -233,6 +233,7 @@ class TrainAug:
                     scale=(1 - a.get("scale", 0.1), 1 + a.get("scale", 0.1)),
                     rotate=(-a.get("rotate", 10), a.get("rotate", 10)),
                     border_mode=0,
+                    mask_interpolation=cv2.INTER_LINEAR,  # soft masks (PHASE4); no effect on the image path
                     p=a.get("affine_p", 0.5),
                 ),
                 A.ColorJitter(*a.get("color_jitter", [0.2, 0.2, 0.2, 0.02]), p=a.get("color_jitter_p", 0.5)),
@@ -268,10 +269,19 @@ class TrainAug:
         if self.extra is not None:
             self.extra.reseed(_derive(seed, 2))
 
-    def __call__(self, img: np.ndarray) -> np.ndarray:
-        img = self.geo_colour(image=img)["image"]
+    def __call__(self, img: np.ndarray, mask: np.ndarray | None = None):
+        """img -> img; or (img, mask) -> (img, mask) when a float32 HxW manipulation mask is given (PHASE4).
+
+        The mask follows the geometric ops only (flip, affine; linear interpolation, zero fill); colour
+        jitter, ExtraAug and corruptions touch the image only. Passing a mask draws no extra randomness,
+        so the image output is bit-identical to the mask-less call with the same RNG state."""
+        if mask is None:
+            img = self.geo_colour(image=img)["image"]
+        else:
+            r = self.geo_colour(image=img, mask=mask)
+            img, mask = r["image"], r["mask"]
         if self.extra is not None:
             img = self.extra(img)
         if self.corr is not None:
             img = self.corr(img)
-        return img
+        return img if mask is None else (img, mask)
