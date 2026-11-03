@@ -1,0 +1,27 @@
+description: "B0 baseline, basic aug only"
+model:
+  name: efficientnet_b0        # timm, ImageNet-1k pretrained
+  drop_rate: 0.3
+  drop_path_rate: 0.0
+aug:
+  hflip: 0.5
+  shift: 0.06
+  scale: 0.1
+  rotate: 10
+  affine_p: 0.5
+  color_jitter: [0.2, 0.2, 0.2, 0.02]
+  color_jitter_p: 0.5
+  seen_corruptions_p: 0.0     # baseline: no corruption augmentation
+loss:
+  label_smoothing: 0.0
+optim:
+  lr_backbone: 3.0e-4
+  lr_head: 1.0e-3
+  weight_decay: 0.05
+  warmup_epochs: 1
+  min_lr: 1.0e-6
+train:
+  epochs: 12
+  batch_size: 64
+  workers: 12
+deterministic: false
