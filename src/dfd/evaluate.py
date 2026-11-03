@@ -75,13 +75,17 @@ def pair_breakdown(image_ids, y: np.ndarray, p: np.ndarray) -> dict:
 
 
 @torch.inference_mode()
-def predict(model, loader, device: str = "cuda") -> tuple[np.ndarray, np.ndarray]:
+def predict(model, loader, device: str = "cuda", tta_flip: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """sigmoid(logit); with tta_flip the logit is the mean over the image and its horizontal flip
+    (same as inference_script.py)."""
     model.eval()
     probs, labels = [], []
     for x, y in loader:
         x = x.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=device == "cuda"):
             logits = model(x)
+            if tta_flip:
+                logits = 0.5 * (logits.float() + model(torch.flip(x, dims=[3])).float())
         probs.append(torch.sigmoid(logits.float()).cpu().numpy())
         labels.append(y.numpy())
     return np.concatenate(probs), np.concatenate(labels)
@@ -101,12 +105,13 @@ def clean_metrics(y: np.ndarray, p: np.ndarray) -> dict:
 
 
 def evaluate_valc(
-    model, df_val: pd.DataFrame, root: Path, batch_size: int, workers: int, device: str = "cuda", return_probs: bool = False
+    model, df_val: pd.DataFrame, root: Path, batch_size: int, workers: int, device: str = "cuda", return_probs: bool = False,
+    tta_flip: bool = False,
 ):
     """AUC per (corruption, severity). With return_probs, also {"name@sev": probs} in df_val order + labels."""
     settings = [(n, s) for n in ALL for s in SEVERITIES]
     ds = ValCDataset(df_val, root, settings)
-    probs, labels = predict(model, make_loader(ds, batch_size, train=False, workers=workers), device)
+    probs, labels = predict(model, make_loader(ds, batch_size, train=False, workers=workers), device, tta_flip)
     n = len(df_val)
     res, per_setting = {}, {}
     for k, (name, sev) in enumerate(settings):
@@ -159,15 +164,19 @@ def format_report(clean: dict, valc: dict, summary: dict) -> str:
 
 def full_eval(
     model, df_val, root, out_dir: Path, batch_size: int = 128, workers: int = 12, valc_limit: int | None = None,
-    write_json: bool = True,
+    write_json: bool = True, tta_flip: bool = False, oof_name: str | None = None,
 ) -> dict:
-    """Clean + val-C metrics. Writes eval.txt, valc_probs.npz and (if write_json) eval.json into out_dir."""
+    """Clean + val-C metrics. Writes eval.txt, valc_probs.npz and (if write_json) eval.json into out_dir;
+    with oof_name also the clean per-image probabilities (image_id,label,prob) as out_dir/oof_name."""
     device = default_device()
     loader = make_loader(FaceDataset(df_val, root), batch_size, train=False, workers=workers)
-    p, y = predict(model, loader, device)
+    p, y = predict(model, loader, device, tta_flip)
+    if oof_name:
+        pd.DataFrame({"image_id": df_val.image_id, "label": y.astype(int), "prob": p}).to_csv(out_dir / oof_name, index=False)
     clean = clean_metrics(y, p)
     dv = df_val if valc_limit is None else df_val.sample(n=min(valc_limit, len(df_val)), random_state=42)
-    valc, valc_probs, valc_labels = evaluate_valc(model, dv, root, batch_size, workers, device, return_probs=True)
+    valc, valc_probs, valc_labels = evaluate_valc(model, dv, root, batch_size, workers, device, return_probs=True,
+                                                  tta_flip=tta_flip)
     summary = summarise(clean, valc)
     report = format_report(clean, valc, summary)
     print(report)
@@ -193,9 +202,15 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--weights", choices=["auto", "raw", "ema"], default="auto",
                     help="auto = EMA weights if the checkpoint has them, else raw")
+    ap.add_argument("--tta_flip", action="store_true",
+                    help="PHASE5 §4.3: average logits over the horizontal flip; writes oof_fold{k}.csv, valc_probs.npz "
+                         "and eval.json into <fold dir>/tta_flip/ (read by `dfd.ensemble --variant tta_flip`)")
+    ap.add_argument("--valc_limit", type=int, help="subsample val images for val-C (smoke test)")
     args = ap.parse_args()
     root = resolve_data_root(args.data_root)
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    if ck.get("fold") == "full":
+        raise SystemExit("full-data checkpoints have no validation split")
     model = build_model(ck["config"], pretrained=False)
     use_ema = args.weights == "ema" or (args.weights == "auto" and "state_dict_ema" in ck)
     model.load_state_dict(ck["state_dict_ema"] if use_ema else ck["state_dict"])
@@ -206,8 +221,12 @@ def main() -> None:
     df_val = folds[folds.fold == ck["fold"]].reset_index(drop=True)
     # own subdir: never overwrite the fold's eval.json / valc_probs.npz written by train.py for the selected checkpoint
     out_dir = Path(args.ckpt).parent / f"eval_{Path(args.ckpt).stem}_{'ema' if use_ema else 'raw'}"
+    if args.tta_flip:
+        out_dir = Path(args.ckpt).parent / "tta_flip"
     out_dir.mkdir(parents=True, exist_ok=True)
-    full_eval(model, df_val, root, out_dir, args.batch_size, args.workers)
+    full_eval(model, df_val, root, out_dir, args.batch_size, args.workers, args.valc_limit,
+              tta_flip=args.tta_flip, oof_name=f"oof_fold{ck['fold']}.csv")
+    print(f"wrote {out_dir}")
 
 
 if __name__ == "__main__":
