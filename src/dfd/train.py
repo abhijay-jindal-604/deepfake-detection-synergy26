@@ -38,8 +38,12 @@ def lr_lambdas(groups, steps_per_epoch: int, epochs: int, warmup_epochs: float, 
     total = steps_per_epoch * epochs
     warm = max(1, int(steps_per_epoch * warmup_epochs))
 
-    def make(base_lr):
-        floor = min_lr / base_lr
+    def make(g):
+        base_lr = g["lr"]
+        if "lr_scale" in g:  # LLRD group: decay to min_lr scaled like its LR (same end fraction as the top layer)
+            floor = (min_lr * g["lr_scale"]) / base_lr
+        else:
+            floor = min_lr / base_lr
 
         def f(step):
             if step < warm:
@@ -49,7 +53,7 @@ def lr_lambdas(groups, steps_per_epoch: int, epochs: int, warmup_epochs: float, 
 
         return f
 
-    return [make(g["lr"]) for g in groups]
+    return [make(g) for g in groups]
 
 
 def _deep_merge(parent: dict, child: dict) -> dict:
@@ -117,7 +121,7 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     if t.get("grad_ckpt"):
         model.net.set_grad_checkpointing(True)
     o = cfg["optim"]
-    groups = param_groups(model, o["lr_backbone"], o["lr_head"], o["weight_decay"])
+    groups = param_groups(model, o["lr_backbone"], o["lr_head"], o["weight_decay"], o.get("layer_decay"))
     opt = torch.optim.AdamW(groups, betas=(0.9, 0.999))
     epochs = t["epochs"]
     n_micro = len(train_loader)

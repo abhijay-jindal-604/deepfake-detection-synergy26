@@ -60,6 +60,8 @@ New architectures can silently fail with the wrong LR (e.g. ViT at 3e-4 often co
 | `b4_320_lr1e4` | same, `lr_backbone: 1.0e-4` | |
 | `cnxs_lr1e4` | `model: {name: convnext_small.fb_in22k_ft_in1k, drop_path_rate: 0.2}`, `batch_size: 48`, `lr_backbone: 1.0e-4`, `layer_decay: 0.8` | ConvNeXt fine-tuning recipes use ~1e-4 with LLRD 0.7-0.8 |
 | `cnxs_lr5e5` | same, `lr_backbone: 5.0e-5` | |
+
+**Implemented deviation (3 Nov):** timm's fine-grained LLRD grouping gives ConvNeXt-S a 37-step span (not ~12), so `layer_decay: 0.8` would leave the stem at 2.6e-4 x lr (nearly frozen). ConvNeXt-S configs use **0.93 = 0.8^(12/37)** (same stem/top ratio as 0.8 over 12 groups). Equivalents if needed: ConvNeXt-T 0.875, B4 0.924, Swin-S 0.902; ViT-B stays 0.75. Also `lr_lambdas` now decays every LLRD group to the same fraction (min_lr/lr_backbone) of its own peak.
 | `vitb_lr5e5` | `model: {name: vit_base_patch16_224.augreg2_in21k_ft_in1k, drop_path_rate: 0.1}`, `batch_size: 64`, `lr_backbone: 5.0e-5`, `layer_decay: 0.75`, `grad_clip: 1.0` | Standard ViT-B fine-tune (BEiT/MAE recipes) |
 | `vitb_lr1e4` | same, `lr_backbone: 1.0e-4` | |
 
