@@ -1,0 +1,9 @@
+# PHASE2 §3 steps 1-2 (+ §2.3 extra). 3-fold paired runs on folds 0,1,2. Restartable.
+runs:
+  - {config: configs/p2/p2_ref.yaml,           folds: "0,1,2", timeout_min: 45}
+  - {config: configs/p2/p2_ref_seed43.yaml,    folds: "0,1,2", timeout_min: 45, args: ["--notes", "DIAGNOSTIC seed noise floor"]}
+  - {config: configs/p2/p2_corr_p07.yaml,      folds: "0,1,2", timeout_min: 45}
+  - {config: configs/p2/p2_corr_p09.yaml,      folds: "0,1,2", timeout_min: 45}
+  - {config: configs/p2/p2_corr_weighted.yaml, folds: "0,1,2", timeout_min: 45}
+  - {config: configs/p2/p2_corr_cont.yaml,     folds: "0,1,2", timeout_min: 45}
+  - {config: configs/p2/p2_extra.yaml,         folds: "0,1,2", timeout_min: 45}

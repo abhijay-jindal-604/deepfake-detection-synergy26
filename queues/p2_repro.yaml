@@ -1,0 +1,7 @@
+# PHASE2 §2 acceptance: baseline_b0 fold 0, select: best, no EMA -> must match Phase 1 (clean 0.8739, selection 0.8409) within ±0.002
+runs:
+  - config: configs/p2/repro_baseline_b0.yaml
+    folds: "0"
+    run_name: repro_baseline_b0
+    timeout_min: 15
+    args: ["--no_log"]

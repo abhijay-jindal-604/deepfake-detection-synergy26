@@ -1,6 +1,7 @@
 """Clean + val-C evaluation of a checkpoint on a fold's validation split.
 
   python -m dfd.evaluate --ckpt outputs/runs/<run>/fold0/best.pt --data_root <root>
+  -> writes into outputs/runs/<run>/fold0/eval_best_{raw|ema}/
 """
 from __future__ import annotations
 
@@ -45,15 +46,21 @@ def clean_metrics(y: np.ndarray, p: np.ndarray) -> dict:
     }
 
 
-def evaluate_valc(model, df_val: pd.DataFrame, root: Path, batch_size: int, workers: int, device: str = "cuda") -> dict:
+def evaluate_valc(
+    model, df_val: pd.DataFrame, root: Path, batch_size: int, workers: int, device: str = "cuda", return_probs: bool = False
+):
+    """AUC per (corruption, severity). With return_probs, also {"name@sev": probs} in df_val order + labels."""
     settings = [(n, s) for n in ALL for s in SEVERITIES]
     ds = ValCDataset(df_val, root, settings)
     probs, labels = predict(model, make_loader(ds, batch_size, train=False, workers=workers), device)
     n = len(df_val)
-    res = {}
+    res, per_setting = {}, {}
     for k, (name, sev) in enumerate(settings):
         sl = slice(k * n, (k + 1) * n)
         res.setdefault(name, {})[str(sev)] = float(roc_auc_score(labels[sl], probs[sl]))
+        per_setting[f"{name}@{sev}"] = probs[sl]
+    if return_probs:
+        return res, per_setting, labels[:n]
     return res
 
 
@@ -96,18 +103,30 @@ def format_report(clean: dict, valc: dict, summary: dict) -> str:
     return "\n".join(lines)
 
 
-def full_eval(model, df_val, root, out_dir: Path, batch_size: int = 128, workers: int = 12, valc_limit: int | None = None) -> dict:
+def full_eval(
+    model, df_val, root, out_dir: Path, batch_size: int = 128, workers: int = 12, valc_limit: int | None = None,
+    write_json: bool = True,
+) -> dict:
+    """Clean + val-C metrics. Writes eval.txt, valc_probs.npz and (if write_json) eval.json into out_dir."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     loader = make_loader(FaceDataset(df_val, root), batch_size, train=False, workers=workers)
     p, y = predict(model, loader, device)
     clean = clean_metrics(y, p)
     dv = df_val if valc_limit is None else df_val.sample(n=min(valc_limit, len(df_val)), random_state=42)
-    valc = evaluate_valc(model, dv, root, batch_size, workers, device)
+    valc, valc_probs, valc_labels = evaluate_valc(model, dv, root, batch_size, workers, device, return_probs=True)
     summary = summarise(clean, valc)
     report = format_report(clean, valc, summary)
     print(report)
     out = {"clean": clean, "valc": valc, "summary": summary}
-    (out_dir / "eval.json").write_text(json.dumps(out, indent=2))
+    # per-image val-C probabilities (float16, val image order) for ensemble selection later
+    np.savez_compressed(
+        out_dir / "valc_probs.npz",
+        image_id=np.asarray(dv.image_id.astype(str).tolist()),
+        label=valc_labels.astype(np.int8),
+        **{k: v.astype(np.float16) for k, v in valc_probs.items()},
+    )
+    if write_json:
+        (out_dir / "eval.json").write_text(json.dumps(out, indent=2))
     (out_dir / "eval.txt").write_text(report + "\n")
     return out
 
@@ -118,16 +137,23 @@ def main() -> None:
     ap.add_argument("--data_root")
     ap.add_argument("--batch_size", type=int, default=128)
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--weights", choices=["auto", "raw", "ema"], default="auto",
+                    help="auto = EMA weights if the checkpoint has them, else raw")
     args = ap.parse_args()
     root = resolve_data_root(args.data_root)
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     model = build_model(ck["config"], pretrained=False)
-    model.load_state_dict(ck["state_dict"])
+    use_ema = args.weights == "ema" or (args.weights == "auto" and "state_dict_ema" in ck)
+    model.load_state_dict(ck["state_dict_ema"] if use_ema else ck["state_dict"])
+    print(f"weights: {'ema' if use_ema else 'raw'} (epoch {ck.get('epoch')})")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device).to(memory_format=torch.channels_last)
     folds = load_folds()
     df_val = folds[folds.fold == ck["fold"]].reset_index(drop=True)
-    full_eval(model, df_val, root, Path(args.ckpt).parent, args.batch_size, args.workers)
+    # own subdir: never overwrite the fold's eval.json / valc_probs.npz written by train.py for the selected checkpoint
+    out_dir = Path(args.ckpt).parent / f"eval_{Path(args.ckpt).stem}_{'ema' if use_ema else 'raw'}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    full_eval(model, df_val, root, out_dir, args.batch_size, args.workers)
 
 
 if __name__ == "__main__":
