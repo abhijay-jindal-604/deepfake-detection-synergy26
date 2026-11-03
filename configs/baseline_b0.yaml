@@ -1,4 +1,4 @@
-description: "B0 baseline, basic aug only"
+description: "B0 baseline, basic aug only, zero-init head"
 model:
   name: efficientnet_b0        # timm, ImageNet-1k pretrained
   drop_rate: 0.3

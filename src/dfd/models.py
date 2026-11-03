@@ -15,6 +15,12 @@ class Classifier(nn.Module):
         self.net = timm.create_model(
             name, pretrained=pretrained, num_classes=1, drop_rate=drop_rate, drop_path_rate=drop_path_rate
         )
+        # timm's EfficientNet init gives a 1-output head U(-1,1) weights -> huge initial logits and
+        # oversized gradients into the pretrained backbone. Zero-init: start at p=0.5 exactly.
+        head = self.net.get_classifier()
+        if isinstance(head, nn.Linear):
+            nn.init.zeros_(head.weight)
+            nn.init.zeros_(head.bias)
         self.register_buffer("mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1) * 255.0, persistent=False)
         self.register_buffer("std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1) * 255.0, persistent=False)
 
