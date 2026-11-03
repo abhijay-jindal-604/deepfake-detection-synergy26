@@ -3,6 +3,9 @@
   python -m dfd.train --config configs/baseline_b0.yaml --fold 0 --data_root <root>
   python -m dfd.train --config configs/baseline_b0.yaml --fold all
   python -m dfd.train --config configs/p2/p2_ref.yaml --fold 0,1,2 --skip_done
+  final model (PHASE5 §3): --fold full -> 100% of the data, fixed epoch count, no validation / OOF / val-C;
+    writes <run>/full/last.pt (EMA weights in state_dict_ema if EMA is on), metrics.csv (train curve), done.json
+  $DFD_RUNS_DIR overrides the runs directory (default outputs/runs).
   smoke test: --limit 512 --epochs 1 --valc_limit 64 --no_log
   CPU (tests while the GPU is busy): DFD_DEVICE=cpu python -m dfd.train ...  (BF16 autocast is CUDA-only)
 
@@ -84,9 +87,16 @@ def load_config(path, _stack: tuple = ()) -> dict:
     return _deep_merge(parent, cfg)
 
 
-def parse_folds(spec: str) -> list[int]:
+FULL = "full"  # --fold full: train on 100% of the data (PHASE5 §3), no validation, output dir <run>/full/
+
+
+def parse_folds(spec: str) -> list:
     if spec == "all":
         return list(range(5))
+    if spec.strip() == FULL:
+        return [FULL]
+    if FULL in [x.strip() for x in spec.split(",")]:
+        raise ValueError("--fold full cannot be combined with other folds")
     folds = [int(x) for x in spec.split(",") if x.strip() != ""]
     if not folds or any(not 0 <= k < 5 for k in folds) or len(set(folds)) != len(folds):
         raise ValueError(f"bad --fold {spec!r}")
@@ -97,18 +107,35 @@ def _val_loss(p: np.ndarray, y: np.ndarray) -> float:
     return float(torch.nn.functional.binary_cross_entropy(torch.tensor(p).clamp(1e-7, 1 - 1e-7), torch.tensor(y)))
 
 
-def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
+def fold_dir(run_dir: Path, fold) -> Path:
+    return run_dir / (FULL if fold == FULL else f"fold{fold}")
+
+
+def fold_done(run_dir: Path, fold) -> bool:
+    """--skip_done marker: fold k = eval.json + oof_fold{k}.csv; full = full/last.pt + full/done.json."""
+    d = fold_dir(run_dir, fold)
+    if fold == FULL:
+        return (d / "done.json").exists() and (d / "last.pt").exists()
+    return (d / "eval.json").exists() and (d / f"oof_fold{fold}.csv").exists()
+
+
+def train_fold(cfg: dict, fold, root: Path, run_dir: Path, args) -> dict:
     seed = int(cfg.get("seed", SEED))
     seed_everything(seed, deterministic=cfg.get("deterministic", False))
     device = os.environ.get("DFD_DEVICE", "cuda")
     amp = device.startswith("cuda")  # BF16 autocast on CUDA only (CPU path is for tests)
-    out = run_dir / f"fold{fold}"
+    full = fold == FULL
+    out = fold_dir(run_dir, fold)
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
 
     folds = load_folds()
-    df_tr = folds[folds.fold != fold].reset_index(drop=True)
-    df_va = folds[folds.fold == fold].reset_index(drop=True)
+    if full:  # 100% of the training data, no validation split (PHASE5 §3)
+        df_tr = folds.reset_index(drop=True)
+        df_va = folds.iloc[:0].reset_index(drop=True)
+    else:
+        df_tr = folds[folds.fold != fold].reset_index(drop=True)
+        df_va = folds[folds.fold == fold].reset_index(drop=True)
     if args.limit:
         df_tr = df_tr.sample(n=min(args.limit, len(df_tr)), random_state=SEED).reset_index(drop=True)
         df_va = df_va.sample(n=min(args.limit // 2, len(df_va)), random_state=SEED).reset_index(drop=True)
@@ -120,6 +147,9 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     select = cfg.get("select", "last")
     if select not in ("last", "best"):
         raise ValueError(f"select must be last|best, got {select!r}")
+    if full and select != "last":
+        print(f"[full] select={select!r} needs a validation set; using the last epoch (fixed epoch count)")
+        select = "last"
     mask_head = bool(cfg["model"].get("mask_head", False))
     with_mask = train_has_masks(cfg)
     if mask_head and cfg.get("mixup"):
@@ -130,7 +160,7 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
         sampler = GroupBatchSampler(df_fit, t["batch_size"], (cfg.get("data") or {}).get("max_per_group", 4), seed,
                                     n_extra=len(sbi_ds) if sbi_ds is not None else 0)
     train_loader = make_loader(train_ds, t["batch_size"], True, workers, seed=seed, batch_sampler=sampler)
-    val_loader = make_loader(FaceDataset(df_va, root), eval_bs, False, workers, seed=seed)
+    val_loader = None if full else make_loader(FaceDataset(df_va, root), eval_bs, False, workers, seed=seed)
 
     model = build_model(cfg).to(device).to(memory_format=torch.channels_last)
     if t.get("grad_ckpt"):
@@ -223,6 +253,26 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
             losses.append(loss.item())
         train_time = time.time() - t0
 
+        if full:  # no validation: log the training curve (PHASE5 §3 curve-match check), save last.pt
+            row = {"epoch": ep, "train_loss": float(np.mean(losses))}
+            if mask_head:
+                row["train_mask_loss"] = float(np.mean(mask_losses))
+            row.update({"lr_backbone": opt.param_groups[0]["lr"], "epoch_time_s": round(time.time() - t0, 1)})
+            rows.append(row)
+            for k, v in row.items():
+                if k != "epoch":
+                    tb.add_scalar(k, v, ep)
+            pd.DataFrame(rows).to_csv(out / "metrics.csv", index=False)
+            ckpt = {"state_dict": model.state_dict(), "config": cfg, "fold": FULL, "epoch": ep}
+            if ema is not None:
+                ckpt["state_dict_ema"] = ema.module.state_dict()
+            tmp = out / "last.pt.tmp"
+            torch.save(ckpt, tmp)
+            tmp.replace(out / "last.pt")
+            print(f"ep {ep:2d} | train {row['train_loss']:.4f} | lr {row['lr_backbone']:.2e} | {train_time:.0f}s train",
+                  flush=True)
+            continue
+
         p, yv = predict(model, val_loader, device)
         m = clean_metrics(yv, p)
         row = {
@@ -259,6 +309,18 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
         )
     tb.close()
     del ema
+
+    if full:  # no OOF / val-C; done.json (written last, atomically) marks the run as finished (--skip_done)
+        res = {
+            "fold": FULL, "select": "last", "ema": bool(e), "selected_epoch": epochs, "epochs": epochs,
+            "n_train": len(df_tr), "n_fit": len(df_fit), "final_train_loss": rows[-1]["train_loss"] if rows else None,
+            "weights": "state_dict_ema" if e else "state_dict", "seed": seed,
+        }
+        tmp = out / "done.json.tmp"
+        tmp.write_text(json.dumps(res, indent=2))
+        tmp.replace(out / "done.json")
+        print(f"[full] done: {epochs} epochs on {len(df_tr)} images -> {out / 'last.pt'} ({res['weights']})")
+        return res
 
     # selected checkpoint: EMA weights if EMA is on, else raw; final epoch (last) or best epoch by that AUC (best)
     ck = torch.load(out / ("best.pt" if select == "best" else "last.pt"), map_location=device, weights_only=False)
@@ -317,12 +379,24 @@ def main() -> None:
 
     results = {}
     for k in folds:
-        done = run_dir / f"fold{k}" / "eval.json"
-        if args.skip_done and done.exists() and (run_dir / f"fold{k}" / f"oof_fold{k}.csv").exists():
-            results[k] = json.loads(done.read_text())
-            print(f"[fold {k}] skip: {done} exists (clean AUC {results[k]['summary']['clean_auc']:.4f})")
+        if args.skip_done and fold_done(run_dir, k):
+            if k == FULL:
+                results[k] = json.loads((run_dir / FULL / "done.json").read_text())
+                print(f"[full] skip: {run_dir / FULL / 'done.json'} exists")
+            else:
+                done = run_dir / f"fold{k}" / "eval.json"
+                results[k] = json.loads(done.read_text())
+                print(f"[fold {k}] skip: {done} exists (clean AUC {results[k]['summary']['clean_auc']:.4f})")
             continue
         results[k] = train_fold(cfg, k, root, run_dir, args)
+        if k == FULL:
+            if not args.no_log:
+                r = results[k]
+                with open(EXPERIMENTS_MD, "a") as f:
+                    f.write(f"| {dt.date.today().isoformat()} | {run}/full | {cfg['model']['name']} | full-data retrain "
+                            f"({r['epochs']} ep{', EMA' if r['ema'] else ''}, n={r['n_train']}) | | | | | | "
+                            f"final train loss {r['final_train_loss']:.4f}. {args.notes} |\n")
+            continue
         if not args.no_log:
             r = results[k]
             note = f"{r['select']} ep {r['selected_epoch']}{' EMA' if r['ema'] else ''} (best ep {r['best_epoch']}). {args.notes}"
