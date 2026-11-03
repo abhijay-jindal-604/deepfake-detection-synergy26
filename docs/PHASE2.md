@@ -117,6 +117,8 @@ The three weakest held-out cells are shot noise, speckle noise and motion blur. 
 
 Implementation: `augment.py` defines `HELD_OUT_DENYLIST = {"MotionBlur", "ZoomBlur", "ISONoise", "ShotNoise", "MultiplicativeNoise", "RandomFog", "Posterize", "Emboss", "Superpixels"}` and asserts at construction time that no transform in the pipeline has one of these class names. A unit check in the smoke test builds every config and runs the assertion.
 
+**Implemented deviations (3 Nov):** (1) deny-list also contains `AdvancedBlur`, `GlassBlur`, `PlasmaBrightnessContrast`, `PlasmaShadow` (look-alikes of motion blur / fog; stricter, none were used). (2) Continuous-severity JPEG quality is clamped at q >= 8 instead of 5 (q5 at s=3.5 destroyed colour entirely, far outside the data); s=1/2/3 stay identical to val-C.
+
 | run | config diff | hypothesis | expected effect |
 |---|---|---|---|
 | `p2_extra` | `aug.extra_p: 0.3` (one random transform from the allowed column, applied before SeenCorruptions) | Wider variety inside seen families generalises to *neighbouring* unseen corruptions (Gaussian noise variety → shot/speckle; blur variety → motion blur). This is the actual test of "robust to the unseen". | held-out +0.005-0.015; seen ~flat |

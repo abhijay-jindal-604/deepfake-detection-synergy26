@@ -205,3 +205,158 @@ def corrupt(img: np.ndarray, name: str, severity: int, seed: int) -> np.ndarray:
 
 def all_settings() -> list[tuple[str, int]]:
     return [(n, s) for n in ALL for s in SEVERITIES]
+
+
+# ================================================================== continuous (training-only) versions
+# Parameterised twins of the SEEN corruptions, used by augment.SeenCorruptions(sev_mode="continuous").
+# The discrete val-C functions above are frozen; nothing below is used by val-C.
+# Severity s is a float; each parameter is linearly interpolated between its values at s = 1, 2, 3
+# (the val-C tables above) and extrapolated with the end-segment slope for s < 1 or s > 3, then clamped.
+# At integer s the parameters equal the discrete table values.
+
+
+def jpeg_p(img, q):
+    q = int(np.clip(np.rint(q), 5, 100))
+    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, q])
+    return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+
+
+def downscale_p(img, f, down=cv2.INTER_AREA, up=cv2.INTER_LINEAR):
+    h, w = img.shape[:2]
+    small = cv2.resize(img, (max(1, int(w * f)), max(1, int(h * f))), interpolation=down)
+    return cv2.resize(small, (w, h), interpolation=up)
+
+
+def pixelate_p(img, block):
+    block = max(1.0, float(block))
+    h, w = img.shape[:2]
+    small = cv2.resize(img, (max(1, int(w / block)), max(1, int(h / block))), interpolation=cv2.INTER_AREA)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+
+def gaussian_blur_p(img, sigma):
+    return cv2.GaussianBlur(img, (0, 0), max(0.1, float(sigma)))
+
+
+def gaussian_noise_p(img, sigma, rng):
+    return _u8(img.astype(np.float32) + rng.normal(0, max(0.0, float(sigma)), img.shape))
+
+
+def snow_p(img, density, wash, rng):
+    h, w = img.shape[:2]
+    layer = (rng.random((h, w)) < density).astype(np.float32)
+    layer = cv2.dilate(layer, np.ones((2, 2), np.uint8))
+    k = 7
+    kernel = np.zeros((k, k), np.float32)
+    kernel[:, k // 2] = 1.0
+    M = cv2.getRotationMatrix2D((k / 2 - 0.5, k / 2 - 0.5), rng.uniform(-30, 30), 1.0)
+    kernel = cv2.warpAffine(kernel, M, (k, k))
+    layer = cv2.filter2D(layer, -1, kernel / kernel.sum() * 3.0)
+    layer = np.clip(layer, 0, 1)[..., None]
+    x = img.astype(np.float32)
+    x = x * (1 - wash) + 255 * wash * 0.5
+    return _u8(x * (1 - layer) + 250 * layer)
+
+
+def cutout_p(img, n, rng):
+    out = img.copy()
+    h, w = img.shape[:2]
+    for _ in range(max(1, int(np.floor(n + 0.5)))):
+        sz = int(rng.integers(h // 8, h // 4))
+        y, x = int(rng.integers(0, h - sz)), int(rng.integers(0, w - sz))
+        out[y : y + sz, x : x + sz] = int(rng.integers(40, 220))
+    return out
+
+
+def block_patches_p(img, n, rng):
+    out = img.copy()
+    h, w = img.shape[:2]
+    for _ in range(max(1, int(np.floor(n + 0.5)))):
+        sz = int(rng.integers(h // 28, h // 14))
+        y, x = int(rng.integers(0, h - sz)), int(rng.integers(0, w - sz))
+        out[y : y + sz, x : x + sz] = rng.integers(0, 256, 3)
+    return out
+
+
+def greyscale_p(img, a):
+    g = cv2.cvtColor(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), cv2.COLOR_GRAY2RGB)
+    return _u8(img * (1 - a) + g * a)
+
+
+def brightness_p(img, d):  # d > 0 brighter, d < 0 darker (fraction of 255)
+    return _u8(img.astype(np.float32) + 255 * d)
+
+
+def contrast_p(img, f):
+    x = img.astype(np.float32)
+    return _u8((x - x.mean()) * f + x.mean())
+
+
+def colour_cast_p(img, m, rng):
+    shift = rng.uniform(-1, 1, 3)
+    shift = shift / (np.abs(shift).max() + 1e-6) * m
+    return _u8(img.astype(np.float32) + shift)
+
+
+# name -> (param name, (value at s=1, s=2, s=3), clamp lo, clamp hi)
+CONT_PARAMS = {
+    "jpeg": ("q", (60, 35, 15), 8, 100),  # lo 8: q<8 destroys colour, far beyond the data
+    "downscale": ("f", (0.6, 0.4, 0.25), 0.1, 1.0),
+    "pixelate": ("block", (4, 8, 12), 1, 32),
+    "gaussian_blur": ("sigma", (1.0, 2.0, 3.0), 0.1, 6.0),
+    "gaussian_noise": ("sigma", (8, 16, 28), 0, 50),
+    "snow": ("density", (0.002, 0.005, 0.010), 0.0002, 0.03),
+    "cutout": ("n", (1, 3, 6), 1, 10),
+    "block_patches": ("n", (5, 15, 30), 1, 50),
+    "greyscale": ("a", (0.5, 0.8, 1.0), 0.0, 1.0),
+    "brightness_up": ("d", (0.2, 0.35, 0.5), 0.0, 0.7),
+    "brightness_down": ("d", (0.2, 0.35, 0.5), 0.0, 0.7),
+    "contrast": ("f", (0.7, 0.5, 0.3), 0.1, 1.0),
+    "colour_cast": ("m", (20, 40, 60), 0, 90),
+}
+assert set(CONT_PARAMS) == set(SEEN)
+
+
+def interp_param(name: str, s: float) -> float:
+    """Piecewise-linear in s through the s=1,2,3 table; end-segment slope beyond; clamped."""
+    _, (v1, v2, v3), lo, hi = CONT_PARAMS[name]
+    v = v1 + (s - 1) * (v2 - v1) if s <= 2 else v2 + (s - 2) * (v3 - v2)
+    return float(np.clip(v, lo, hi))
+
+
+def corrupt_continuous(img: np.ndarray, name: str, s: float, seed: int) -> np.ndarray:
+    """Training-only: SEEN corruption `name` at float severity s (e.g. U[0.5, 3.5])."""
+    if name not in SEEN:
+        raise KeyError(f"continuous corruption only defined for SEEN names, got {name!r}")
+    if img.shape[:2] != (SIZE, SIZE):
+        img = cv2.resize(img, (SIZE, SIZE), interpolation=cv2.INTER_AREA)
+    rng = np.random.default_rng(seed)
+    v = interp_param(name, s)
+    if name == "jpeg":
+        out = jpeg_p(img, v)
+    elif name == "downscale":
+        out = downscale_p(img, v)
+    elif name == "pixelate":
+        out = pixelate_p(img, v)
+    elif name == "gaussian_blur":
+        out = gaussian_blur_p(img, v)
+    elif name == "gaussian_noise":
+        out = gaussian_noise_p(img, v, rng)
+    elif name == "snow":
+        out = snow_p(img, v, float(np.clip(0.05 * s, 0.0, 0.25)), rng)  # wash = 0.15*s/3, as discrete
+    elif name == "cutout":
+        out = cutout_p(img, v, rng)
+    elif name == "block_patches":
+        out = block_patches_p(img, v, rng)
+    elif name == "greyscale":
+        out = greyscale_p(img, v)
+    elif name == "brightness_up":
+        out = brightness_p(img, v)
+    elif name == "brightness_down":
+        out = brightness_p(img, -v)
+    elif name == "contrast":
+        out = contrast_p(img, v)
+    else:  # colour_cast
+        out = colour_cast_p(img, v, rng)
+    assert out.shape == (SIZE, SIZE, 3) and out.dtype == np.uint8, (name, out.shape, out.dtype)
+    return out
