@@ -165,10 +165,10 @@ Append every run to `docs/EXPERIMENTS.md`:
 ---
 
 ## Phase 1 exit criteria
-- [ ] Env verified on GPU; `requirements.txt` frozen.
-- [ ] `data/folds.csv` exists; pair thresholds confirmed visually with the user.
-- [ ] `val-C` examples grid looks right; evaluator prints the full table.
-- [ ] Baseline B0 fold-0 results in `docs/EXPERIMENTS.md` (ideally 5-fold OOF too).
-- [ ] Git repo initialised, work committed.
+- [x] Env verified on GPU; `requirements.txt` frozen.
+- [x] `data/folds.csv` exists; pair thresholds confirmed visually with the user.
+- [x] `val-C` examples grid looks right; evaluator prints the full table.
+- [x] Baseline B0 fold-0 results in `docs/EXPERIMENTS.md` (ideally 5-fold OOF too).
+- [x] Git repo initialised, work committed.
 
 Next (Phase 2, ~7-10 Nov): full augmentation stack, bigger backbones (EfficientNet-B4@320, ConvNeXt-S, ViT-B), EMA, LLRD, label smoothing, aux mask head + pair batching, SBI, ensemble selection.
