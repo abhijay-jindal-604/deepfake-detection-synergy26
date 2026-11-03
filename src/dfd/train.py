@@ -4,6 +4,10 @@
   python -m dfd.train --config configs/baseline_b0.yaml --fold all
   python -m dfd.train --config configs/p2/p2_ref.yaml --fold 0,1,2 --skip_done
   smoke test: --limit 512 --epochs 1 --valc_limit 64 --no_log
+  CPU (tests while the GPU is busy): DFD_DEVICE=cpu python -m dfd.train ...  (BF16 autocast is CUDA-only)
+
+Phase 4 keys (docs/PHASE4.md §5): model.mask_head, loss.mask_weight, data.pair_masks, data.group_batches,
+data.drop_real_fakes, sbi.ratio. Without them training is bit-identical to the pre-Phase-4 code.
 """
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ import csv
 import datetime as dt
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -25,8 +30,8 @@ from timm.utils import ModelEmaV3
 from torch.utils.tensorboard import SummaryWriter
 
 from .augment import TrainAug
-from .data import FaceDataset, load_folds, make_loader
-from .evaluate import clean_metrics, full_eval, predict
+from .data import FaceDataset, GroupBatchSampler, build_train_set, load_folds, make_loader, train_has_masks
+from .evaluate import clean_metrics, full_eval, pair_breakdown, predict
 from .models import build_model, param_groups
 from .paths import REPO_ROOT, RUNS_DIR, resolve_data_root
 from .seed import SEED, seed_everything
@@ -95,7 +100,8 @@ def _val_loss(p: np.ndarray, y: np.ndarray) -> float:
 def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     seed = int(cfg.get("seed", SEED))
     seed_everything(seed, deterministic=cfg.get("deterministic", False))
-    device = "cuda"
+    device = os.environ.get("DFD_DEVICE", "cuda")
+    amp = device.startswith("cuda")  # BF16 autocast on CUDA only (CPU path is for tests)
     out = run_dir / f"fold{fold}"
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
@@ -114,7 +120,16 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     select = cfg.get("select", "last")
     if select not in ("last", "best"):
         raise ValueError(f"select must be last|best, got {select!r}")
-    train_loader = make_loader(FaceDataset(df_tr, root, TrainAug(cfg)), t["batch_size"], True, workers, seed=seed)
+    mask_head = bool(cfg["model"].get("mask_head", False))
+    with_mask = train_has_masks(cfg)
+    if mask_head and cfg.get("mixup"):
+        raise ValueError("mixup + model.mask_head is not supported (mixed images have no mask target)")
+    train_ds, df_fit, sbi_ds = build_train_set(cfg, df_tr, root, TrainAug(cfg), seed)
+    sampler = None
+    if (cfg.get("data") or {}).get("group_batches"):
+        sampler = GroupBatchSampler(df_fit, t["batch_size"], (cfg.get("data") or {}).get("max_per_group", 4), seed,
+                                    n_extra=len(sbi_ds) if sbi_ds is not None else 0)
+    train_loader = make_loader(train_ds, t["batch_size"], True, workers, seed=seed, batch_sampler=sampler)
     val_loader = make_loader(FaceDataset(df_va, root), eval_bs, False, workers, seed=seed)
 
     model = build_model(cfg).to(device).to(memory_format=torch.channels_last)
@@ -130,6 +145,7 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
         opt, lr_lambdas(groups, steps_per_epoch, epochs, o.get("warmup_epochs", 1), o.get("min_lr", 1e-6))
     )
     ls = cfg.get("loss", {}).get("label_smoothing", 0.0)
+    mask_w = float(cfg.get("loss", {}).get("mask_weight", 0.2)) if mask_head else 0.0
     bce = torch.nn.BCEWithLogitsLoss()
 
     # EMA of weights + buffers (BN running stats are lerped too; num_batches_tracked is copied)
@@ -145,14 +161,27 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     rows = []
     best_score, best_epoch = -1.0, -1
     opt_steps = 0
+    if with_mask:
+        print(
+            f"[fold {fold}] phase4: mask_head {mask_head} (w {mask_w}) | pair masks "
+            f"{sum(m is not None for m in getattr(train_ds, 'datasets', [train_ds])[0].mask_paths)} | "
+            f"sbi {len(sbi_ds) if sbi_ds is not None else 0}/epoch | fit images {len(df_fit)} | group_batches {sampler is not None}"
+        )
+    elif sampler is not None:
+        print(f"[fold {fold}] phase4: group_batches on")
     print(
         f"[fold {fold}] train {len(df_tr)} | val {len(df_va)} | {n_micro} batches/epoch, accum {accum} -> "
         f"{steps_per_epoch} steps | {epochs} epochs | select {select} | ema {bool(ema)} | mixup {bool(mx)} | seed {seed}"
     )
     for ep in range(1, epochs + 1):
         model.train()
-        t0, losses = time.time(), []
-        for i, (x, y) in enumerate(train_loader):
+        if hasattr(train_ds, "set_epoch"):
+            train_ds.set_epoch(ep)  # SBI: fresh pseudo-fakes per epoch (shared-memory, reaches persistent workers)
+        if sampler is not None:
+            sampler.set_epoch(ep)
+        t0, losses, mask_losses = time.time(), [], []
+        for i, batch in enumerate(train_loader):
+            x, y = batch[0], batch[1]
             g0 = (i // accum) * accum
             group = min(accum, n_micro - g0)  # last partial group of the epoch is smaller
             x = x.to(device, non_blocking=True).contiguous(memory_format=torch.channels_last)
@@ -163,9 +192,23 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
                 perm = torch.from_numpy(mix_rng.permutation(x.shape[0])).to(device)
                 x = (lam * x.float() + (1 - lam) * x.float()[perm]).contiguous(memory_format=torch.channels_last)
                 y_s = lam * y_s + (1 - lam) * y_s[perm]
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                logits = model(x)
-            loss = bce(logits.float(), y_s)
+            with torch.autocast(device_type="cuda" if amp else "cpu", dtype=torch.bfloat16, enabled=amp):
+                out_ = model(x)
+            if mask_head:
+                logits, mask_logits = out_
+                loss = bce(logits.float(), y_s)
+                mk = batch[2].to(device, non_blocking=True)
+                mv = batch[3].to(device, non_blocking=True)
+                # area-downsample the target to the feature grid (14x14 at 224, 20x20 for B4@320)
+                mk = torch.nn.functional.adaptive_avg_pool2d(mk[:, None], mask_logits.shape[-2:])[:, 0]
+                per = torch.nn.functional.binary_cross_entropy_with_logits(
+                    mask_logits.float(), mk, reduction="none").mean(dim=(1, 2))
+                mask_loss = (per * mv).sum() / mv.sum().clamp(min=1.0)  # valid samples only; 0 if none
+                loss = loss + mask_w * mask_loss
+                mask_losses.append(mask_loss.item())
+            else:
+                logits = out_
+                loss = bce(logits.float(), y_s)
             if i == g0:
                 opt.zero_grad(set_to_none=True)
             (loss / group if group > 1 else loss).backward()
@@ -186,6 +229,8 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
             "epoch": ep, "train_loss": float(np.mean(losses)), "val_loss": _val_loss(p, yv), "val_auc": m["auc"],
             "val_f1": m["f1@0.5"], "val_acc": m["acc@0.5"],
         }
+        if mask_head:  # train_loss = cls + mask_weight * mask
+            row["train_mask_loss"] = float(np.mean(mask_losses))
         if ema is not None:
             pe, _ = predict(ema.module, val_loader, device)
             me = clean_metrics(yv, pe)
@@ -226,6 +271,11 @@ def train_fold(cfg: dict, fold: int, root: Path, run_dir: Path, args) -> dict:
     print(f"\n[fold {fold}] select={select} -> epoch {selected_epoch} ({wtype}); best {wtype} epoch {best_epoch} AUC {best_score:.4f} -> val-C")
     res = full_eval(model, df_va, root, out, eval_bs, workers, args.valc_limit, write_json=False)
     res.update({"select": select, "ema": bool(e), "selected_epoch": selected_epoch, "best_epoch": best_epoch})
+    res["pair_breakdown"] = pair_breakdown(df_va.image_id, yv, p)  # PHASE4 §6.2, from the OOF probabilities
+    pb = res["pair_breakdown"]
+    _f = lambda v: "n/a" if v is None else f"{v:.4f}"
+    print(f"[fold {fold}] pair breakdown: AUC pair {_f(pb['auc_pair'])} (n fakes {pb['n_pair_fakes']}) | "
+          f"non-pair {_f(pb['auc_nonpair'])} (n fakes {pb['n_nonpair_fakes']}) | reals {pb['n_reals']}")
     # eval.json is written last: its existence marks the fold as done (--skip_done)
     tmp = out / "eval.json.tmp"
     tmp.write_text(json.dumps(res, indent=2))
