@@ -1,6 +1,6 @@
 # Deepfake ML Hackathon (Synergy '26, IIIT Bangalore)
 
-Status: **Phase 1 done (3 Nov).** Env, grouped folds, val-C, B0 baseline + 5-fold OOF; results in `docs/EXPERIMENTS.md`. Run code with `.venv/bin/python -m dfd.<module>` and `DF_DATA_ROOT` set. Full brief: `brief.md`.
+Status: **Phase 1 done (3 Nov).** Env, grouped folds, val-C, B0 baseline + 5-fold OOF; results in `docs/EXPERIMENTS.md`. Phases 2-6 planned: `docs/PHASE2.md`-`docs/PHASE6.md`, calendar in `docs/PLAN.md` §10. User decisions (3 Nov): public GitHub repo with **no Claude co-author lines in commits**; TF export committed (13 Nov, time-boxed); Kaggle T4 for timing. Run code with `.venv/bin/python -m dfd.<module>` and `DF_DATA_ROOT` set. Full brief: `brief.md`.
 
 ## Goal and constraints
 Train a binary classifier separating **real (label 0)** from **deepfake (label 1)** 224x224 face images; output P(Fake) for **3,000 test images**. Team 1-4 (registered solo as "abhijayjindal604"). Prize pool Rs 20,000 (10k / 6k / 4k).

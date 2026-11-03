@@ -1,6 +1,7 @@
 # Deepfake Detection — Master Plan
 
-Planning session: 3 Nov 2026. Safe deadline: **end of 14 Nov 2026**. No code yet.
+Planning session: 3 Nov 2026. Safe deadline: **end of 14 Nov 2026**.
+Status (3 Nov evening): Phase 1 done (`docs/PHASE1.md`). Phases 2-6 planned in detail in `docs/PHASE2.md` … `docs/PHASE6.md`; the day-by-day calendar is in §10.
 
 ---
 
@@ -124,6 +125,8 @@ Applied independently of label, probability-tuned so ~50-70% of samples get at l
 ### 5.4 Final models
 After choosing configs by 5-fold CV, either (a) retrain each chosen architecture on 100% of the training data with the CV-chosen epoch count, or (b) keep the fold models. Prefer (a) for speed. If time allows, compare against (b) using fold-out-of-fold predictions.
 
+**Decided (3 Nov, PHASE5 §3):** (a). Five fold models x 3 members would take an estimated 4-8 min on a T4 (efficiency risk). To make (a) safe, all decisions from Phase 2 on use the *last EMA checkpoint at a fixed epoch count*, not the best epoch. Fallback for a member whose full-data run looks abnormal: average its fold-0 and fold-1 models.
+
 ---
 
 ## 6. Evaluation: our only leaderboard
@@ -162,7 +165,8 @@ After choosing configs by 5-fold CV, either (a) retrain each chosen architecture
 | Report (>= 4 pages PDF) | Problem, data audit (pairs, corruptions), architecture, hyperparameter justification table, training pipeline, CV + val-C results, ablations, Grad-CAM, limitations, reproducibility |
 | Logs/curves | CSV/TensorBoard exports → plots in report |
 | Grad-CAM (+2) | Grid of correct/incorrect real/fake with heatmaps |
-| TF export (+1) | **Skip unless everything else is done**: the PyTorch→ONNX→TF path is fiddly, for 1 point |
+| TF export (+1) | **Committed (user decision, 3 Nov)**: PyTorch→ONNX→onnx2tf→SavedModel in a separate `.venv-tf`, on 13 Nov, hard stop 18:00 (PHASE6 §4) |
+| Source code hosting | **Public GitHub repo** (user decision, 3 Nov), with no Claude co-author lines; old trailers scrubbed before the first push, only with the user's OK at that time (PHASE6 §5) |
 
 ---
 
@@ -173,20 +177,31 @@ After choosing configs by 5-fold CV, either (a) retrain each chosen architecture
 
 ---
 
-## 10. Timeline (3 → 14 Nov)
+## 10. Timeline (revised 3 Nov evening; detail in PHASE2-6)
 
-| Dates | Milestone |
-|---|---|
-| **3-4 Nov** | Env setup; (optional) email organisers about CLIP; data tooling: group/pair discovery, grouped folds, pair masks, val-C builder |
-| **5-6 Nov** | Baseline: EfficientNet-B0 @224, basic aug → first CV-AUC + val-C. Then the full augmentation stack; ablate each family. |
-| **7-8 Nov** | Scale up: EfficientNet-B4@320, ConvNeXt-S, ViT-B. Add EMA, LLRD, aux mask head + pair batching. Compare. |
-| **9-10 Nov** | SBI pseudo-fakes experiment; (CLIP only if approved). Pick ensemble members + weights from OOF predictions. |
-| **11 Nov** | Final retrains on full data; bundle weights; write inference script; Kaggle T4 timing + double-run determinism check |
-| **12-13 Nov** | Grad-CAM figures, loss curves, report (>= 4 pages), README, requirements, packaging (Drive folder + zip) |
-| **14 Nov** | Fresh-clone reproducibility test, upload, set Drive to public, submit on Unstop. **Done.** |
-| 15 Nov | Buffer only |
+Phase 1 (env, grouped folds, val-C, B0 baseline) finished on 3 Nov, about 2 days ahead of the original plan.
+Budget assumption (user, 3 Nov): **daytime runs (~4-6 h) + overnight queues (~6-8 h)**, so roughly 12 GPU-h/day of capacity. Overnight queues need `power/control=on` (set by the user with sudo), the charger plugged in, the restartable `run_queue.py`, and a morning check.
+GPU-h = local RTX 5060 busy time incl. a 30% throttling margin. Run-time basis: B0 ≈ 4 min/fold; B4@320 ≈ 15, ConvNeXt-S ≈ 10, ViT-B ≈ 11 min/fold (probe-based, PHASE3 §1).
 
-Cut order if behind: TF export → SBI → 3rd ensemble member → aux mask head. Never cut: grouped CV, augmentation, inference script tests, report.
+| date | phase | daytime (attended) | overnight queue | GPU-h |
+|---|---|---|---|---|
+| **Wed 4 Nov** | 2 | Code: config `base:`, multi-fold, last/EMA select, queue runner, compare.py, aug extensions + held-out deny-list, valc_probs. Smoke tests. Runs: noise floor, corruption p/mix, extra aug. **You:** Kaggle account + phone verification. | P2 steps 3-6 (EMA, epochs, LS, drop-path, mixup, res288) | ~4 |
+| **Thu 5 Nov** | 2→3 | Pick the P2 recipe → 5-fold confirm. Phase 3 code (input upsample, LLRD, eval batch, timeouts). Weight downloads, B4 batch probe, LR sanity on fold 0 for B4 / ConvNeXt-S / ViT-B. | 5-fold: ConvNeXt-S → B4@320 → ViT-B | ~6 |
+| **Fri 6 Nov** | 3→4 | Phase 3 summary (+ Swin-S / ConvNeXt-T alternate if needed). Phase 4 code: pair masks, **mask audit with you**, SBI generator, **SBI audit with you**, mask head, pair batching, LOCO clusters. | B0 Phase 4 ablations (3-fold) + LOCO | ~3.5 |
+| **Sat 7 Nov** | 4 | Analyse Phase 4 (pair/non-pair breakdown, LOCO, Grad-CAM spot check); decide adoptions. | Port winners to 1-2 big backbones, 5 folds | ~4 |
+| **Sun 8 Nov** | buffer / 5 | Reruns of anything that failed overnight. Start Phase 5 code: `ensemble.py`, `bundle.py`, `--fold full`. | (spare: 3rd backbone with Phase 4 recipe if needed) | ~2 |
+| **Mon 9 Nov** | 5 | Flip-TTA OOF runs; ensemble selection (members, temperatures, weights, threshold). **Feature freeze in the evening.** | Full-data retrains of all members | ~1.5 |
+| **Tue 10 Nov** | 5 | `inference_script.py`, parity test, validator, double-run, offline run. **Kaggle T4 timing + sm_75 check.** | — | ~0.5 |
+| **Wed 11 Nov** | 5→6 | Fixes; **final predictions.csv v1 on a T4; upload v1 to Drive.** Grad-CAM grids, curves, val-C chart, ablation table. | — | ~0.5 |
+| **Thu 12 Nov** | 6 | Report §1, §3, §4; README; requirements-infer; **history scrub (your OK) + public GitHub push.** | — | 0 |
+| **Fri 13 Nov** | 6 | **TF export 09:00-18:00 (hard stop)**; report §2, §5-7, summary; build the PDF. Unstop window is open (from 12 Nov 23:59). | — | ~0.2 |
+| **Sat 14 Nov** | 6 | Package; Drive public check (incognito); fresh-clone + Kaggle re-run; **submit on Unstop by ~18:00**; tag `v1.0-submission`. | — | ~0.3 |
+| Sun 15 Nov | — | Buffer only. Round window reportedly closes 00:26. | — | — |
+| **total** | | | | **~22-23 GPU-h** of ~120 available: it fits with a large margin; the real constraint is your attention for the audits and decisions |
+
+Milestones that must not slip: P2 recipe (5 Nov AM), 5-fold big backbones (6 Nov AM), feature freeze (9 Nov PM), **valid predictions.csv on Drive (11 Nov)**, submission (14 Nov).
+
+Cut order if behind (first cut first): Phase 2 minor ablations (mixup, drop-rate, LS 0.10, res288) → Phase 3 alternates (Swin-S / ConvNeXt-T) → pair batching → LOCO → porting Phase 4 to a 2nd backbone → mask head → tuned ensemble weights (use equal) → flip TTA → 3rd ensemble member → SBI. TF export is committed but time-boxed (13 Nov, 18:00 stop). Never cut: grouped CV, corruption augmentation, last-checkpoint protocol, inference script tests (double-run, validator, T4 timing), report, public Drive check.
 
 ---
 
@@ -198,4 +213,7 @@ Cut order if behind: TF export → SBI → 3rd ensemble member → aux mask head
 | Validation leakage via pairs → overconfident choices | Grouped folds |
 | Inference fails on organiser machine (paths, versions, no internet, greyscale input) | No `pretrained=True` at inference, RGB convert, pinned requirements, Kaggle clean-room test |
 | Timeout | Measured T4 timing; ensemble kept to ≤3 models |
+| GPU fails to wake from sleep / drops out overnight (seen 3 Nov) | `power/control=on`, charger, restartable `run_queue.py` with a CUDA check before each run, morning check; critical runs scheduled with a day of slack |
+| 8 GB VRAM (B4 at batch 32 hangs at 288-320; ConvNeXt-S at 64 peaks at 6.7 GB) | Probe-measured batch sizes (PHASE3 §1), `expandable_segments`, per-run timeout, grad checkpointing switch |
+| Thermal throttling (an epoch went 9 s → 16 s on 3 Nov) | `gpu_monitor.csv`; x1.3 time margin in every estimate |
 | Rule ambiguity (CLIP, format) | Email organisers early; default to the safe interpretation |
