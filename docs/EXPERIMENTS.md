@@ -78,4 +78,4 @@ Selection score = 0.5 x clean AUC + 0.5 x mean val-C AUC (all corruptions).
 | 2026-11-04 | P2 step 3: reject 20 epochs @ lr 1e-4 | **REJECT**: −0.0088; held-out −0.030 on 3/3 folds. Gentler fine-tuning made the B0 *less* robust to unseen corruptions (opposite of the hypothesis); suggests the corruption-aug signal needs a full-strength LR to be learned |
 | 2026-11-04 | P2 step 4: **adopt label smoothing 0.10** | TIE (+0.0026 < 0.006) but Δ>0 on 3/3 folds on clean, seen and held-out; equal cost, tie rule → higher held-out (+0.0026). (LS 0.05 showed nothing) |
 | 2026-11-04 | P2 step 4: reject head dropout 0.5 | TIE (+0.0009), held-out ±0: keep 0.3 |
-| 2026-11-04 | P2 step 5: mixup not run (cut) | PHASE2 cut order (mixup is 2nd to cut); expected tie/negative; step 6 res288 also cut → Phase 3 runs B4 at 288? No: B4@320 kept as planned and decided by the PHASE3 LR sanity runs |
+| 2026-11-04 | P2 steps 5-6 cut: mixup and res288 not run | PHASE2 cut order (step 6 first, then mixup); both expected small. Input resolution for B4 (320) is decided by the PHASE3 step-1 runs instead |
