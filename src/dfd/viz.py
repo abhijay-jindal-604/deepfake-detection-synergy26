@@ -53,3 +53,39 @@ def grid_from_cells(cells: list[Image.Image], out: Path, title: str = "", cols: 
         canvas.paste(c, (gap + cc * (w + gap), top + gap + r * (h + gap)))
     out.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out, quality=88)
+
+
+def valc_examples(img_rgb: np.ndarray, image_id: str, out: Path, tile: int = 160) -> None:
+    """Rows = corruptions (held-out marked), cols = clean + severities 1..3."""
+    from .corruptions import ALL, HELD_OUT, SEVERITIES, corrupt, setting_seed
+
+    cells = []
+    for name in ALL:
+        tag = " [held-out]" if name in HELD_OUT else ""
+        row = [_tile(Image.fromarray(img_rgb), f"{name}{tag}"[:24], (90, 90, 90) if tag else (30, 80, 160), size=tile)]
+        for s in SEVERITIES:
+            im = corrupt(img_rgb, name, s, setting_seed(image_id, name, s))
+            row.append(_tile(Image.fromarray(im), f"severity {s}", (60, 60, 60), size=tile))
+        cells.extend(row)
+    grid_from_cells(cells, out, "val-C: clean | severity 1 | 2 | 3  (grey header = held out from training)", cols=1 + len(SEVERITIES), gap=4)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    import cv2
+    import pandas as pd
+
+    from .paths import AUDIT_DIR, DATA_DIR, resolve_data_root, train_image_path
+
+    p = argparse.ArgumentParser()
+    p.add_argument("what", choices=["valc"])
+    p.add_argument("--data_root")
+    p.add_argument("--index", type=int, default=0, help="which fold-0 validation image")
+    a = p.parse_args()
+    root = resolve_data_root(a.data_root)
+    folds = pd.read_csv(DATA_DIR / "folds.csv", dtype={"image_id": str})
+    r = folds[folds.fold == 0].iloc[a.index]
+    img = cv2.cvtColor(cv2.imread(str(train_image_path(root, r.image_id, r.label))), cv2.COLOR_BGR2RGB)
+    valc_examples(img, r.image_id, AUDIT_DIR / "valC_examples.jpg")
+    print("wrote", AUDIT_DIR / "valC_examples.jpg")
