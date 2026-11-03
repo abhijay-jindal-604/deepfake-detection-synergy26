@@ -1,0 +1,10 @@
+# Usage: .venv/bin/python scripts/run_queue.py queues/example.yaml [--dry_run]
+runs:
+  - config: configs/baseline_b0.yaml     # already done -> SKIP
+    folds: "0"
+    run_name: baseline_b0
+  - config: configs/b0_seencorr.yaml     # pending example
+    folds: "0,1"
+    run_name: example_pending
+    timeout_min: 40                      # whole-run wall clock; default 20 * n_folds
+    args: ["--notes", "queue example"]
