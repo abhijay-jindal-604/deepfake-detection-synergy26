@@ -3,7 +3,7 @@
 Last update: 2026-11-04 03:40 IST (handover before 04:00 shutdown).
 
 ## Phase / step
-Phase 2 §3 steps 1-6 DONE (all verdicts in EXPERIMENTS Decisions). **Recipe = `configs/p2/p2_final.yaml`**: B0 + seen corruptions p0.9 + EMA + drop_path 0.2 + LS 0.10, 12 epochs, last EMA ckpt. Step 7 (5-fold confirm) started 03:38. Phase 3 + 4 code merged; Phase 5 code on branch (reviewed). ~1 day ahead of PLAN §10.
+Phase 2 COMPLETE: p2_final 5-fold OOF AUC 0.8964 (baseline 0.8715). Steps 1-6 done (all verdicts in EXPERIMENTS Decisions). **Recipe = `configs/p2/p2_final.yaml`**: B0 + seen corruptions p0.9 + EMA + drop_path 0.2 + LS 0.10, 12 epochs, last EMA ckpt. Step 7 done 03:53. Phase 3 + 4 code merged; Phase 5 code on branch (reviewed). ~1 day ahead of PLAN §10.
 
 ## Decision threshold
 Δselection >= 0.006 on the 3-fold mean and > 0 on all 3 folds (noise floor 4 Nov). Use `scripts/compare.py A B --folds 0,1,2 --threshold 0.006`.
@@ -20,6 +20,6 @@ Phase 2 §3 steps 1-6 DONE (all verdicts in EXPERIMENTS Decisions). **Recipe = `
 - Approve audit grids: `outputs/audit/pair_masks.jpg` (31 masks, ~18 clean; PHASE4 §1 deviations recorded) and `outputs/audit/sbi_examples.jpg` (default prior, greyscale guard). `data/masks*`, `data/mask_prior.npy` stay uncommitted until approved (needed for p4 configs; reviewer noted fresh clones need them).
 
 ## Next actions (4 Nov morning)
-1. Rerun the p2_final queue to finish the 5 folds; compare p2_final vs p2_ema (folds 0-2) and vs baseline_b0_5fold (5-fold OOF 0.8715); log the reference in EXPERIMENTS. Merge `worktree-agent-a98d6a22ba82f3084` (Phase 5) after the queue; GPU smoke of inference_script.py FP16 path on train images.
+1. (p2_final 5-fold done.) Merge `worktree-agent-a98d6a22ba82f3084` (Phase 5) after the queue; GPU smoke of inference_script.py FP16 path on train images.
 2. Ask user: approve the two audit grids. Rebase configs/p3 + configs/p4 onto `../p2/p2_final.yaml`; queue PHASE3 step 0 (weight downloads, B4@320 batch probe) + step 1 LR sanity (fold 0), then Phase 4 B0 ablations (3-fold, compare vs p2_final).
 3. Dispatch: LOCO clusters (PHASE4 §6.3) + gradcam.py; requirements-infer.txt; Kaggle T4 timing plan (user does the upload).
