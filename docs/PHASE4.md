@@ -31,6 +31,8 @@ Also computed here: `data/mask_prior.npy`, the mean of all accepted masks (where
 
 `data/masks/` is small (PNG, ~1-2 MB in total), derived from train data only, and committed.
 
+**Implemented deviations (4 Nov 00:00):** translation-only phaseCorrelate yielded 1 usable mask (most pairs are re-crops zoomed 0.8-1.2x, shifted up to ~45 px). Now: affine `findTransformECC` alignment (cc>=0.90, geometry/coverage gates), quality gate cc>=0.97, constant-colour block exclusion, robust brightness/contrast match, `MAX_OUTSIDE_D=8.5`. Yield: **31 accepted / 187 pairs** (~18 clean by eye), far below the 100-170 expected; the mask head will rely mainly on SBI masks + all-zero real masks. Many `pairs.csv` real-fake 'pairs' (cos_sim < 0.6, pHash <= 10) are different people: groups are over-merged (harmless for CV), and §6.2 defines 'pair' fakes by successful ECC alignment instead.
+
 ---
 
 ## 2. Auxiliary mask head (`src/dfd/models.py`, ~2 h)
