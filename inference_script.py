@@ -18,6 +18,9 @@ Pipeline (identical to training, src/dfd/data.py + src/dfd/models.py):
 Ensemble: s = sum_m w_m * logit_m / T_m (logit_m averaged over the horizontal flip if tta_flip), confidence =
 sigmoid(s / T_ens).
 
+Robustness: a file neither OpenCV nor PIL can decode still gets a row (confidence 0.5, label per threshold) with a
+WARNING naming it; if DataLoader workers die (e.g. small /dev/shm), inference is redone with num_workers=0.
+
 Speed / reproducibility: all models loaded once; batched DataLoader with workers; CUDA -> FP16 autocast +
 channels_last + inference_mode (a batch with a non-finite FP16 logit is recomputed in FP32); CPU -> FP32.
 cudnn.benchmark is OFF and cudnn.deterministic ON so a re-run gives the same CSV; files are processed in sorted
@@ -52,6 +55,7 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 BATCH_SIZE = 64
 DEFAULT_THRESHOLD = 0.5  # only used if the bundle carries no threshold
+UNREADABLE_CONF = 0.5  # confidence for a file no decoder can read (a missing row would score as wrong)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -68,11 +72,12 @@ def list_images(test_dir: str | Path) -> list[Path]:
 
 
 def read_rgb(path: Path, size: int = DEFAULT_SIZE) -> np.ndarray:
-    """uint8 HxWx3 RGB at size x size; same decoder and resize as training (dfd.data.read_rgb)."""
+    """uint8 HxWx3 RGB at size x size; same decoder and resize as training (dfd.data.read_rgb).
+    Raises RuntimeError if neither OpenCV nor PIL can decode the file."""
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)  # BGR; greyscale -> 3 channels; alpha dropped; 16-bit -> 8-bit
     if img is not None:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    else:  # fallback decoder for files OpenCV cannot read (fail loudly if neither can)
+    else:  # fallback decoder for files OpenCV cannot read (raise if neither can; caller emits 0.5)
         try:
             from PIL import Image
 
@@ -94,8 +99,12 @@ class TestDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, i: int):
-        img = read_rgb(self.paths[i], self.size)
-        return torch.from_numpy(img.transpose(2, 0, 1).copy()), i
+        try:
+            img, ok = read_rgb(self.paths[i], self.size), True
+        except Exception as exc:  # noqa: BLE001  never crash on one bad file: it gets confidence 0.5 (see main)
+            print(f"[WARNING] cannot decode {self.paths[i]} ({exc}); it will get confidence {UNREADABLE_CONF}", flush=True)
+            img, ok = np.zeros((self.size, self.size, 3), dtype=np.uint8), False
+        return torch.from_numpy(img.transpose(2, 0, 1).copy()), i, ok
 
 
 def _worker_init(_: int) -> None:
@@ -192,17 +201,21 @@ def member_logits(model: Member, x: torch.Tensor, tta_flip: bool, fp16: bool) ->
     return z
 
 
+def _is_loader_failure(exc: RuntimeError) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in ("worker", "shared memory", "shm", "bus error"))
+
+
 @torch.inference_mode()
-def run_inference(members, paths: list[Path], device: str, batch_size: int, tta_flip: bool,
-                  temperature_ens: float, image_size: int = DEFAULT_SIZE) -> tuple[np.ndarray, np.ndarray]:
-    """Returns (confidence float64 (N,), per-member logits float32 (N, M)) in `paths` order."""
+def _predict_logits(members, paths: list[Path], device: str, batch_size: int, tta_flip: bool, image_size: int,
+                    workers: int) -> tuple[np.ndarray, np.ndarray]:
     cuda = device.startswith("cuda")
-    workers = min(4, os.cpu_count() or 1)
     loader = DataLoader(TestDataset(paths, image_size), batch_size=batch_size, shuffle=False, num_workers=workers,
                         pin_memory=cuda, worker_init_fn=_worker_init if workers > 0 else None)
     logits = np.zeros((len(paths), len(members)), dtype=np.float32)
     seen = np.zeros(len(paths), dtype=bool)
-    for x, idx in loader:
+    readable = np.ones(len(paths), dtype=bool)
+    for x, idx, ok in loader:
         x = x.to(device, non_blocking=True)
         if cuda:
             x = x.contiguous(memory_format=torch.channels_last)
@@ -210,12 +223,31 @@ def run_inference(members, paths: list[Path], device: str, batch_size: int, tta_
         for j, (model, _, _) in enumerate(members):
             logits[idx, j] = member_logits(model, x, tta_flip, cuda).cpu().numpy()
         seen[idx] = True
+        readable[idx] = ok.numpy().astype(bool)
     assert seen.all(), "some images were not processed"
+    return logits, readable
+
+
+def run_inference(members, paths: list[Path], device: str, batch_size: int, tta_flip: bool,
+                  temperature_ens: float, image_size: int = DEFAULT_SIZE) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Returns (confidence float64 (N,), per-member logits float32 (N, M), readable bool (N,)) in `paths` order.
+    Unreadable files get confidence UNREADABLE_CONF. If the DataLoader workers fail (e.g. a small /dev/shm in a
+    container), the whole pass is redone in the main process (num_workers=0): same inputs, same batches."""
+    workers = min(4, os.cpu_count() or 1)
+    try:
+        logits, readable = _predict_logits(members, paths, device, batch_size, tta_flip, image_size, workers)
+    except RuntimeError as exc:
+        if workers == 0 or not _is_loader_failure(exc):
+            raise
+        print(f"[WARNING] DataLoader with {workers} workers failed ({str(exc).splitlines()[0][:200]}); "
+              f"redoing inference with num_workers=0", flush=True)
+        logits, readable = _predict_logits(members, paths, device, batch_size, tta_flip, image_size, 0)
     w = np.array([m[1] for m in members], dtype=np.float64)
     t = np.array([m[2] for m in members], dtype=np.float64)
     s = (logits.astype(np.float64) / t) @ w
     conf = 1.0 / (1.0 + np.exp(-s / float(temperature_ens)))
-    return conf, logits
+    conf[~readable] = UNREADABLE_CONF
+    return conf, logits, readable
 
 
 def main() -> None:
@@ -253,7 +285,7 @@ def main() -> None:
           f"{len(members)} member(s) | tta_flip {tta_flip} | T_ens {t_ens:.3f} | threshold {threshold:.4f} | "
           f"{len(paths)} images | batch {args.batch_size} | load {t_loaded - t_start:.1f}s")
 
-    conf, _ = run_inference(members, paths, device, args.batch_size, tta_flip, t_ens, image_size)
+    conf, _, readable = run_inference(members, paths, device, args.batch_size, tta_flip, t_ens, image_size)
     if device == "cuda":
         torch.cuda.synchronize()
     t_inf = time.time() - t_loaded
@@ -278,6 +310,13 @@ def main() -> None:
     print(f"  Predicted FAKE: {predictions['label'].sum()} ({predictions['label'].mean() * 100:.1f}%)")
     print(f"  Predicted REAL: {(predictions['label'] == 0).sum()}")
     print(f"  Mean confidence: {predictions['confidence'].mean():.4f}")
+    n_bad = int((~readable).sum())
+    if n_bad:
+        bad = [ids[i] for i in np.flatnonzero(~readable)]
+        print(f"  WARNING: {n_bad} unreadable file(s) got confidence {UNREADABLE_CONF}: {bad[:10]}"
+              f"{' ...' if n_bad > 10 else ''}")
+    else:
+        print("  Unreadable files: 0")
     print(f"  Time: load {t_loaded - t_start:.1f}s | inference {t_inf:.1f}s ({len(paths) / max(t_inf, 1e-9):.1f} img/s) | "
           f"total {total:.1f}s")
 
