@@ -17,6 +17,9 @@ Phase 2: §2 code done and committed (reproduction passed). §3 steps 1-2 runnin
 - Approve pair-mask grid (31 masks, deviations from PHASE4 §1) and SBI grid.
 - none. (power/control set to `on` by user 23:3x, confirmed.)
 
+## Decision threshold
+Δselection >= 0.006 on the 3-fold mean and > 0 on all 3 folds (noise floor measured 4 Nov, see EXPERIMENTS Decisions).
+
 ## Next 3 actions (4 Nov morning)
 1. Read queue log; compare.py: seed43 vs ref (noise floor -> threshold), p07/p09 vs ref, weighted/cont/extra vs ref; record verdicts.
 2. Combined step-2 winner run, then step 3 (p2_ema, p2_ep8, p2_ep20_lr1e4) configs + queue.
