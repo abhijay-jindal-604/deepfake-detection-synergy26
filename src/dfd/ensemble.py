@@ -5,7 +5,7 @@
 
 Inputs per run and fold k: <runs_dir>/<run>/fold{k}/oof_fold{k}.csv (image_id,label,prob) and, if present,
 fold{k}/valc_probs.npz (per-image val-C probabilities, 57 settings). --variant tta_flip reads the same files from
-fold{k}/tta_flip/ (written by `python -m dfd.evaluate --ckpt .../last.pt --tta_flip --oof`).
+fold{k}/tta_flip/ (written by `python -m dfd.evaluate --ckpt .../last.pt --tta_flip`).
 
 Procedure (all on probabilities converted to logits z = log(p / (1 - p)), clipped):
  1. T_m per member: minimise OOF log-loss of sigmoid(z_m / T_m) (bounded scalar search on log T).

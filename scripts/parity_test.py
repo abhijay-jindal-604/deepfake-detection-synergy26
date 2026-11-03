@@ -16,7 +16,7 @@
    --device cpu (default) hides the GPU from the subprocess (CUDA_VISIBLE_DEVICES=""); --device cuda tests FP16.
 3. Robustness folder: PNG (lossless) copies, .JPG / .jpeg names, greyscale, RGBA, 300x300 and 160x160 resizes.
    Checks every file gets a row, lossless PNG copies and renamed JPEGs score exactly like the original, and a
-   second run writes a byte-identical CSV.
+   second run of the same command writes a byte-identical CSV (a different batch size: max |dp| <= 1e-4 only).
 All temporary files go to a fresh temp directory (--workdir to choose one), never into the repo.
 """
 from __future__ import annotations
@@ -206,18 +206,22 @@ def main() -> None:
         rdir = work / "robust_images"
         same = make_variants(list(zip(df.image_id[:3], df.label[:3])), root, rdir)
         n_img = sum(1 for p in rdir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
-        o1, o2 = work / "pred_robust_1.csv", work / "pred_robust_2.csv"
+        o1, o2, o3 = (work / f"pred_robust_{k}.csv" for k in (1, 2, 3))
         run_script(rdir, bp, o1, 4)
-        run_script(rdir, bp, o2, 3)  # different batch size too
+        run_script(rdir, bp, o2, 4)  # same command: must be byte-identical
+        run_script(rdir, bp, o3, 3)  # different batch size: kernels may differ, so only a tolerance
         r = pd.read_csv(o1, dtype={"image_id": str}).set_index("image_id")
+        r3 = pd.read_csv(o3, dtype={"image_id": str}).set_index("image_id").loc[r.index]
         rows_ok = len(r) == n_img
         same_ok = all(r.confidence[v] == r.confidence[o] for v, o in same.items())
         ident = filecmp.cmp(o1, o2, shallow=False)
+        d_bs = float((r.confidence - r3.confidence).abs().max())
+        bs_ok = d_bs <= 1e-4
         hdr = o1.read_text().splitlines()[0] == "image_id,label,confidence"
         print(f"3. robustness: {len(r)}/{n_img} rows | header ok {hdr} | lossless/renamed copies identical {same_ok} | "
-              f"re-run (batch 4 vs 3) byte-identical {ident}")
+              f"re-run (same batch) byte-identical {ident} | batch 4 vs 3 max |dp| {d_bs:.1e} ({'ok' if bs_ok else 'FAIL'})")
         print(r.to_string())
-        ok &= rows_ok and same_ok and ident and hdr
+        ok &= rows_ok and same_ok and ident and bs_ok and hdr
     finally:
         if not args.keep and not args.workdir:
             shutil.rmtree(work, ignore_errors=True)
