@@ -1,0 +1,3 @@
+base: ../b0_seencorr.yaml
+description: "P2 reference: b0_seencorr, last-checkpoint selection"
+select: last

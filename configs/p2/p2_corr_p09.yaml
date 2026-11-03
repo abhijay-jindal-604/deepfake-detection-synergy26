@@ -1,0 +1,4 @@
+base: p2_ref.yaml
+description: "seen_corruptions_p 0.9. Hypothesis: too many corrupted samples may hurt clean AUC; val-C flat vs p0.7"
+aug:
+  seen_corruptions_p: 0.9

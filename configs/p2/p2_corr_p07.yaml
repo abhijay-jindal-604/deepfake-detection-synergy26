@@ -1,0 +1,4 @@
+base: p2_ref.yaml
+description: "seen_corruptions_p 0.7. Hypothesis: more corrupted samples widen coverage; val-C seen up, clean flat"
+aug:
+  seen_corruptions_p: 0.7

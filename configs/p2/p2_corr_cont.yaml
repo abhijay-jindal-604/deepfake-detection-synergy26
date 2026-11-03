@@ -1,0 +1,5 @@
+base: p2_ref.yaml
+description: "Continuous corruption severity in [0.5, 3.5]. Hypothesis: training slightly beyond sev 3 lifts worst cell; held-out flat or better."
+aug:
+  sev_mode: continuous
+  sev_range: [0.5, 3.5]

@@ -1,0 +1,3 @@
+base: ../baseline_b0.yaml
+description: "Phase 2 acceptance: must reproduce Phase 1 baseline_b0 fold 0 within ±0.002"
+select: best

@@ -1,0 +1,4 @@
+base: p2_ref.yaml
+description: "Weight weak corruptions (pixelate 3, downscale 2, gaussian_noise 3, snow 2, others 1). Hypothesis: pixelate@3 and noise cells improve."
+aug:
+  corr_weights: {pixelate: 3, downscale: 2, gaussian_noise: 3, snow: 2}

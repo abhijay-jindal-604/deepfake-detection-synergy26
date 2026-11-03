@@ -1,0 +1,4 @@
+base: p2_ref.yaml
+description: "extra_p 0.3: extra seen-family transforms (no held-out types). Hypothesis: held-out +0.005-0.015, seen flat."
+aug:
+  extra_p: 0.3

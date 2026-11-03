@@ -1,0 +1,3 @@
+base: p2_ref.yaml
+description: "DIAGNOSTIC ONLY - seed noise floor, never ships. Change: seed 43. Hypothesis: shows what no real change looks like."
+seed: 43
