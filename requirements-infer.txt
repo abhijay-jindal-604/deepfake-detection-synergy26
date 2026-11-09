@@ -1,0 +1,29 @@
+# Inference-only dependencies for inference_script.py (Python 3.10). Install:
+#   pip install -r requirements-infer.txt
+# Versions are copied from the training venv (requirements.txt), so the bundle is read by the exact torch/timm
+# that wrote it.
+#
+# GPU / CUDA notes
+# - torch 2.11.0+cu128 is the CUDA 12.8 build. Its compiled GPU archs (torch._C._cuda_getArchFlags(), checked
+#   9 Nov 2026) are sm_75 sm_80 sm_86 sm_90 sm_100 sm_120, so it runs natively on an NVIDIA T4 (Turing, sm_75)
+#   and on the RTX 5060 used for training (Blackwell, sm_120). The CUDA runtime, cuDNN 9.19 and cuBLAS come
+#   inside the wheels; the machine only needs an NVIDIA driver that supports CUDA 12.x.
+# - The +cu128 build lives on the PyTorch index (line below), not on PyPI. Without a GPU, the same pins also
+#   run on CPU (FP32, slower).
+# - timm imports torchvision, so it is needed although the script never calls it directly.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
+timm==1.0.30
+numpy==2.2.6
+pandas==2.3.3
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+# timm's own dependencies, pinned to the training venv's versions
+huggingface-hub==2.4.0
+safetensors==0.8.0
+pyyaml==6.0.3
+# pandas' dependencies
+python-dateutil==3.0.0
+pytz==2026.6
+tzdata==2026.6
