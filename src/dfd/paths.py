@@ -9,7 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "data"          # small generated metadata (committed)
 OUTPUTS_DIR = REPO_ROOT / "outputs"    # runs, audit images (git-ignored)
 AUDIT_DIR = OUTPUTS_DIR / "audit"
-RUNS_DIR = OUTPUTS_DIR / "runs"
+RUNS_ENV_VAR = "DFD_RUNS_DIR"  # optional override (e.g. a worktree reading the main checkout's runs)
+RUNS_DIR = Path(os.environ[RUNS_ENV_VAR]).expanduser().resolve() if os.environ.get(RUNS_ENV_VAR) else OUTPUTS_DIR / "runs"
 
 
 def resolve_data_root(cli_value: str | None = None) -> Path:
