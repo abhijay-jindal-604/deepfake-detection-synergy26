@@ -1,0 +1,43 @@
+# LOCO (PHASE4 §6.3) for p2_final: fold 0, one run per held-out cluster (k=4).
+# Reference for the gap = the normal p2_final fold-0 run. Report: python -m dfd.loco report --names p2_final
+runs:
+- config: configs/loco/p2_final_loco0.yaml
+  folds: '0'
+  run_name: loco_p2_final_c0
+  timeout_min: 25
+  args:
+  - --no_log
+  - --valc_limit
+  - '128'
+  - --notes
+  - LOCO c0
+- config: configs/loco/p2_final_loco1.yaml
+  folds: '0'
+  run_name: loco_p2_final_c1
+  timeout_min: 25
+  args:
+  - --no_log
+  - --valc_limit
+  - '128'
+  - --notes
+  - LOCO c1
+- config: configs/loco/p2_final_loco2.yaml
+  folds: '0'
+  run_name: loco_p2_final_c2
+  timeout_min: 25
+  args:
+  - --no_log
+  - --valc_limit
+  - '128'
+  - --notes
+  - LOCO c2
+- config: configs/loco/p2_final_loco3.yaml
+  folds: '0'
+  run_name: loco_p2_final_c3
+  timeout_min: 25
+  args:
+  - --no_log
+  - --valc_limit
+  - '128'
+  - --notes
+  - LOCO c3

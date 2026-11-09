@@ -9,7 +9,7 @@
   smoke test: --limit 512 --epochs 1 --valc_limit 64 --no_log
   CPU (tests while the GPU is busy): DFD_DEVICE=cpu python -m dfd.train ...  (BF16 autocast is CUDA-only)
 
-Phase 4 keys (docs/PHASE4.md §5): model.mask_head, loss.mask_weight, data.pair_masks, data.group_batches,
+Phase 4 keys (docs/PHASE4.md §5, §6.3): model.mask_head, loss.mask_weight, data.pair_masks, data.group_batches, data.loco_holdout,
 data.drop_real_fakes, sbi.ratio. Without them training is bit-identical to the pre-Phase-4 code.
 """
 from __future__ import annotations
@@ -136,6 +136,13 @@ def train_fold(cfg: dict, fold, root: Path, run_dir: Path, args) -> dict:
     else:
         df_tr = folds[folds.fold != fold].reset_index(drop=True)
         df_va = folds[folds.fold == fold].reset_index(drop=True)
+    loco = (cfg.get("data") or {}).get("loco_holdout")
+    if loco is not None:  # PHASE4 §6.3: train without one cluster's fakes (val split unchanged)
+        if full:
+            raise ValueError("data.loco_holdout is a CV diagnostic; it cannot be combined with --fold full")
+        from .loco import drop_heldout_fakes
+
+        df_tr = drop_heldout_fakes(df_tr, int(loco))
     if args.limit:
         df_tr = df_tr.sample(n=min(args.limit, len(df_tr)), random_state=SEED).reset_index(drop=True)
         df_va = df_va.sample(n=min(args.limit // 2, len(df_va)), random_state=SEED).reset_index(drop=True)
