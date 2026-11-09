@@ -1,0 +1,9 @@
+# PHASE4 §5: B0 ablations on the p2_final recipe, paired 3-fold (0,1,2) vs p2_final. Ordered by PHASE4 priority
+# (SBI = most promising robustness lever; pair batching is first in the cut order). sbi_only = fold-0 diagnostic.
+runs:
+  - {config: configs/p4/p4_sbi03.yaml, folds: "0,1,2", timeout_min: 75}
+  - {config: configs/p4/p4_sbi_mask.yaml, folds: "0,1,2", timeout_min: 75}
+  - {config: configs/p4/p4_maskhead.yaml, folds: "0,1,2", timeout_min: 75}
+  - {config: configs/p4/p4_sbi06.yaml, folds: "0,1,2", timeout_min: 75}
+  - {config: configs/p4/p4_pairbatch.yaml, folds: "0,1,2", timeout_min: 75}
+  - {config: configs/p4/p4_sbi_only.yaml, folds: "0", timeout_min: 30}

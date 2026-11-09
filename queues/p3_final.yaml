@@ -1,0 +1,5 @@
+# PHASE3 step 2: 5-fold runs of the LR-sanity winners, ordered by expected value (cnxs -> b4_320 -> vitb).
+runs:
+  - {config: configs/p3/cnxs_final.yaml, folds: "all", timeout_min: 80}
+  - {config: configs/p3/b4_320_final.yaml, folds: "all", timeout_min: 100}
+  - {config: configs/p3/vitb_final.yaml, folds: "all", timeout_min: 80}

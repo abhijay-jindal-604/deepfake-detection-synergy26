@@ -1,0 +1,5 @@
+base: ../p2/p2_final.yaml
+description: "P3 final: ViT-B/16 augreg2 in21k-ft-1k, lr_backbone 5e-5 (step 1: 1e-4 sel 0.8775 vs 5e-5 0.8720, within 0.01 -> lower), LLRD 0.75, clip 1.0"
+model: {name: vit_base_patch16_224.augreg2_in21k_ft_in1k, drop_path_rate: 0.1}
+train: {batch_size: 64}
+optim: {lr_backbone: 5.0e-5, layer_decay: 0.75, grad_clip: 1.0}

@@ -1,0 +1,7 @@
+base: ../p2/p2_final.yaml
+description: "P3 final: EfficientNet-B4 @320, batch 32 deterministic, lr_backbone 2e-4 (step 1: 2e-4 sel 0.8666 vs 1e-4 0.8559, > 0.01)"
+model: {name: efficientnet_b4.ra2_in1k, input_size: 320, drop_path_rate: 0.2}
+train: {batch_size: 32}
+# Step 0 probe (9 Nov): batch 32 @320 runs with cudnn.benchmark off (no hang; 7.6 GB reserved peak) -> deterministic
+deterministic: true
+optim: {lr_backbone: 2.0e-4}
