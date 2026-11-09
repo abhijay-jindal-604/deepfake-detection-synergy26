@@ -1,4 +1,4 @@
-base: ../p2/p2_ref.yaml   # TODO: rebase onto ../p2/p2_final.yaml once Phase 2 decides (PHASE4 §5 diffs are vs p2_final)
+base: ../p2/p2_final.yaml
 # Diagnostic, fold 0 only: real fakes removed from training (train reals + SBI only); val unchanged.
 # ratio 1.0 keeps the classes balanced (~2.8k reals vs ~2.8k SBI per epoch), since no real fakes remain.
 description: "P4 diagnostic: SBI-only fakes (real fakes dropped from train), does SBI transfer to real fakes?"

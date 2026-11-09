@@ -1,4 +1,4 @@
-base: ../p2/p2_ref.yaml   # TODO: switch to ../p2/p2_final.yaml once Phase 2 decides (PHASE3 §3)
+base: ../p2/p2_final.yaml
 description: "P3 step 1: ConvNeXt-S in22k-ft-1k, lr_backbone 1.0e-4, LLRD 0.93 (= 0.8 over 12 groups)"
 model: {name: convnext_small.fb_in22k_ft_in1k, drop_path_rate: 0.2}
 train: {batch_size: 48}

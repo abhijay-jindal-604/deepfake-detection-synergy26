@@ -1,4 +1,4 @@
-base: ../p2/p2_ref.yaml   # TODO: switch to ../p2/p2_final.yaml once Phase 2 decides (PHASE3 §3)
+base: ../p2/p2_final.yaml
 description: "P3 step 1: ViT-B/16 augreg2 in21k-ft-1k, lr_backbone 5e-5, LLRD 0.75, grad clip 1.0"
 model: {name: vit_base_patch16_224.augreg2_in21k_ft_in1k, drop_path_rate: 0.1}
 train: {batch_size: 64}

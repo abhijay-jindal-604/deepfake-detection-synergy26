@@ -1,0 +1,9 @@
+# PHASE3 step 1: 2-point LR sanity per backbone on fold 0 (p2_final recipe). Pick per backbone by fold-0
+# selection score; within 0.01 -> take the LOWER LR.
+runs:
+  - {config: configs/p3/cnxs_lr1e4.yaml, folds: "0", timeout_min: 40}
+  - {config: configs/p3/cnxs_lr5e5.yaml, folds: "0", timeout_min: 40}
+  - {config: configs/p3/b4_320_lr2e4.yaml, folds: "0", timeout_min: 50}
+  - {config: configs/p3/b4_320_lr1e4.yaml, folds: "0", timeout_min: 50}
+  - {config: configs/p3/vitb_lr5e5.yaml, folds: "0", timeout_min: 40}
+  - {config: configs/p3/vitb_lr1e4.yaml, folds: "0", timeout_min: 40}
