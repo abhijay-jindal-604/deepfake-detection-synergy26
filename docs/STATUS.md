@@ -1,25 +1,29 @@
 # Coordinator status
 
-Last update: 2026-11-04 03:40 IST (handover before 04:00 shutdown).
+Last update: 2026-11-09 13:45 IST (GPU build agent).
 
 ## Phase / step
-Phase 2 COMPLETE: p2_final 5-fold OOF AUC 0.8964 (baseline 0.8715). Steps 1-6 done (all verdicts in EXPERIMENTS Decisions). **Recipe = `configs/p2/p2_final.yaml`**: B0 + seen corruptions p0.9 + EMA + drop_path 0.2 + LS 0.10, 12 epochs, last EMA ckpt. Step 7 done 03:53. Phase 3 + 4 code merged; Phase 5 code on branch (reviewed). ~1 day ahead of PLAN §10.
+Phase 2 COMPLETE (p2_final 5-fold OOF AUC 0.8964; recipe `configs/p2/p2_final.yaml`). Phase 5 code merged to main (f61c07a); CPU + GPU FP16 parity verified. **Safety-net submission v0_b0 exists** (`outputs/submissions/v0_b0/`, single B0 full-data retrain, validator ALL PASS). Phase 3 step 0 done; **step 1 (LR sanity, fold 0) running**; step 2 (5-fold cnxs → b4_320 → vitb) follows.
 
 ## Decision threshold
 Δselection >= 0.006 on the 3-fold mean and > 0 on all 3 folds (noise floor 4 Nov). Use `scripts/compare.py A B --folds 0,1,2 --threshold 0.006`.
 
 ## Running
-- GPU queue `queues/p2_final.yaml` (p2_final, folds all; started 03:38, ~11 min/fold when CPU is quiet). The 04:00 shutdown will cut it: **rerun `DF_DATA_ROOT=resources/extracted/dataset/hackathon_dataset .venv/bin/python scripts/run_queue.py queues/p2_final.yaml`** (skips finished folds, then writes oof_all + summary).
-- Finding: CV runs are CPU-bound when subagents run CPU-heavy checks (20 min vs 11 min per 3-fold run). Keep CPU-heavy subagent work light during queues.
-- **Laptop shutdown scheduled 04:00** (user request; `shutdown -c` cancels). power/control = on.
+- GPU queue `queues/p3_lr.yaml` (6 fold-0 runs: cnxs_lr1e4, cnxs_lr5e5, b4_320_lr2e4, b4_320_lr1e4, vitb_lr5e5, vitb_lr1e4), started 13:36. Log `outputs/runs/queue_p3_lr.log`, per-run `outputs/runs/<run>.log`. Resume (skips finished folds): `DF_DATA_ROOT=resources/extracted/dataset/hackathon_dataset nohup .venv/bin/python scripts/run_queue.py queues/p3_lr.yaml > outputs/runs/queue_p3_lr.stdout 2>&1 &`
+- Then: LR pick per PHASE3 rule (fold-0 selection; within 0.01 → lower LR) → `configs/p3/*_final.yaml` → `queues/p3_final.yaml`.
 
-- Phase 5 code on branch `worktree-agent-a98d6a22ba82f3084` (ensemble.py, bundle.py, inference_script.py, parity_test.py, `--fold full`, `--tta_flip`); parity vs dfd.models exact in FP32; reviewed (merge verdict) + robustness fixes (unreadable image -> 0.5 row; DataLoader worker fallback), branch head 575df24. **Merge in the morning before any new GPU queue.** CUDA/FP16 inference path untested (needs GPU + Kaggle T4). `scripts/validate_predictions.py` committed on main. Note: BF16 OOF probs differ from FP32 inference by up to 0.19 per image (AUC +7e-4) — fine for decisions.
-- Incident 02:00: Phase 5 agent ran ~40 s of inference on the GPU during the queue; no effect on the run; later briefs force CUDA_VISIBLE_DEVICES="".
+## Safety net (v0_b0)
+`outputs/submissions/v0_b0/predictions.csv` + `model_weights.pt` (15.6 MiB) + run logs + `validate.txt`. Rebuild: `python scripts/bundle.py --member p2_final:full --out <dir>/model_weights.pt`, then `python inference_script.py --test_dir <test> --weights <dir>/model_weights.pt --output <dir>/predictions.csv`. Local GPU 13.8 s wall, byte-identical re-run. Not yet produced on a T4 (Kaggle kit: `scripts/kaggle/`).
+
+## Notes
+- `run_queue.py` does not handle `--fold full`; launch full-data retrains with `nohup .venv/bin/python -m dfd.train --config <cfg> --fold full --run_name <run>` directly.
+- Inference throughput (B0, 3k imgs): ~5 s fixed CUDA/worker warm-up + ~550 img/s; data loading (4 workers) is the bottleneck for B0, not the GPU.
+- Don't redirect run_queue stdout to the queue's own log file (it writes `outputs/runs/queue_<name>.log` itself; lines get duplicated).
 
 ## Pending user decisions
-- Approve audit grids: `outputs/audit/pair_masks.jpg` (31 masks, ~18 clean; PHASE4 §1 deviations recorded) and `outputs/audit/sbi_examples.jpg` (default prior, greyscale guard). `data/masks*`, `data/mask_prior.npy` stay uncommitted until approved (needed for p4 configs; reviewer noted fresh clones need them).
+- Approve audit grids: `outputs/audit/pair_masks.jpg` and `outputs/audit/sbi_examples.jpg`. `data/masks*`, `data/mask_prior.npy` stay uncommitted until approved (needed for p4 configs).
 
-## Next actions (4 Nov morning)
-1. (p2_final 5-fold done.) Merge `worktree-agent-a98d6a22ba82f3084` (Phase 5) after the queue; GPU smoke of inference_script.py FP16 path on train images.
-2. Ask user: approve the two audit grids. Rebase configs/p3 + configs/p4 onto `../p2/p2_final.yaml`; queue PHASE3 step 0 (weight downloads, B4@320 batch probe) + step 1 LR sanity (fold 0), then Phase 4 B0 ablations (3-fold, compare vs p2_final).
-3. Dispatch: LOCO clusters (PHASE4 §6.3) + gradcam.py; requirements-infer.txt; Kaggle T4 timing plan (user does the upload).
+## Next actions
+1. After step 1: commit LR decisions, launch `queues/p3_final.yaml` (cnxs → b4_320 → vitb, 5 folds) + flip-TTA OOF evals.
+2. Phase 3 summary (compare.py, OOF correlations) → ensemble pool; LOCO queue (`queues/loco_p2_final.yaml`, coordinator schedules after Phase 3).
+3. Kaggle T4 timing of v0_b0 kit.
