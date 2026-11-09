@@ -1,34 +1,36 @@
 # Coordinator status
 
-Last update: 2026-11-09 16:05 IST (GPU build agent).
+Last update: 2026-11-09 22:30 IST (analysis + GPU agent).
 
 ## Phase / step
-Phase 2 COMPLETE (p2_final 5-fold OOF AUC 0.8964; recipe `configs/p2/p2_final.yaml`). Phase 5 code merged to main (f61c07a); CPU + GPU FP16 parity verified. **Safety-net submission v0_b0 exists** (`outputs/submissions/v0_b0/`, single B0 full-data retrain, validator ALL PASS). Phase 3 steps 0-1 done (LRs: cnxs 5e-5, b4_320 2e-4, vitb 5e-5; see EXPERIMENTS). Audit grids approved, Phase 4 data committed (f17e797). **Overnight GPU chain running** (Phase 3 step 2 + Phase 4 B0 ablations + LOCO + flip-TTA).
+Phases 2, 3, 4 done; Phase 5 ensemble chosen and **submission v1_ens built** (local GPU). Feature freeze in effect. Details and numbers: `docs/EXPERIMENTS.md` (rows dated 9 Nov, "Phase 3 report" onwards).
+- **Phase 3:** 5-fold selection B0 0.8878, ConvNeXt-S 0.8914, ViT-B 0.8907, B4@320 0.8800 (best clean/OOF 0.9009 but fragile to strong noise). Formal PHASE3 §4 no-go (no backbone +0.01 over B0); not debugged further (freeze); the value shows up as ensemble diversity.
+- **Phase 4:** SBI (0.3, 0.6, +mask) REJECT; mask head and pair batching TIE → not adopted. SBI-only diagnostic 0.526: SBI pseudo-fakes don't transfer to this data. LOCO p2_final: held-out-cluster AUC 0.780 vs 0.889 seen (cluster 3 0.631); clusters are content/corruption clusters, not methods.
+- **Phase 5:** ensemble = **p2_final (B0) + b4_320_final + vitb_final**, equal weights, T_m 1.129/1.002/0.984, T_ens 0.917, **threshold 0.4282**, **no flip TTA** (gain 0.000 < 0.003). OOF AUC **0.9074** vs best single 0.9009; J 0.9010 vs best single 0.8910. Families EfficientNet + ViT.
 
 ## Decision threshold
 Δselection >= 0.006 on the 3-fold mean and > 0 on all 3 folds (noise floor 4 Nov). Use `scripts/compare.py A B --folds 0,1,2 --threshold 0.006`.
 
 ## Running
-- **GPU chain `scripts/p3_step2.sh`** started 16:02, stdout `outputs/runs/p3_step2.stdout`, per-queue logs `outputs/runs/queue_<q>.log`, per-run `outputs/runs/<run>.log`. Order and ETA (local RTX 5060):
-  1. `queues/p3_final.yaml`: cnxs_final 5 folds (~47 min, ~16:50) → b4_320_final (~62 min, ~17:55) → vitb_final (~50 min, ~18:45)
-  2. `queues/p4_b0.yaml` (B0, folds 0,1,2): p4_sbi03 → p4_sbi_mask → p4_maskhead → p4_sbi06 → p4_pairbatch → p4_sbi_only (fold 0) (~70-80 min, ~20:05)
-  3. `queues/loco_p2_final.yaml` (4 x fold 0, ~15-20 min, ~20:25)
-  4. flip-TTA OOF + val-C (`dfd.evaluate --tta_flip`) for cnxs_final, b4_320_final, vitb_final, p2_final (20 folds, ~1-1.3 h) → **chain done ~21:30 (±45 min)**
-- **Resume** (skips finished folds and finished TTA evals): `DF_DATA_ROOT=resources/extracted/dataset/hackathon_dataset nohup setsid scripts/p3_step2.sh > outputs/runs/p3_step2.stdout 2>&1 < /dev/null &` (check nothing is running first: `pgrep -af dfd.train`). Only one GPU job at a time.
-- After: Phase 3 summary (`scripts/compare.py`, OOF correlations), P4 verdicts vs p2_final (`compare.py p2_final p4_x --folds 0,1,2 --threshold 0.006` + LOCO/pair rule), `python -m dfd.loco report --names p2_final` (rerun `dfd.loco configs` with the SBI config for the 2nd LOCO recipe if SBI looks promising).
+Nothing. GPU free.
 
-## Safety net (v0_b0)
-`outputs/submissions/v0_b0/predictions.csv` + `model_weights.pt` (15.6 MiB) + run logs + `validate.txt`. Rebuild: `python scripts/bundle.py --member p2_final:full --out <dir>/model_weights.pt`, then `python inference_script.py --test_dir <test> --weights <dir>/model_weights.pt --output <dir>/predictions.csv`. Local GPU 13.8 s wall, byte-identical re-run. Not yet produced on a T4 (Kaggle kit: `scripts/kaggle/`).
-
-## Notes
-- `run_queue.py` does not handle `--fold full`; launch full-data retrains with `nohup .venv/bin/python -m dfd.train --config <cfg> --fold full --run_name <run>` directly.
-- Inference throughput (B0, 3k imgs): ~5 s fixed CUDA/worker warm-up + ~550 img/s; data loading (4 workers) is the bottleneck for B0, not the GPU.
-- Don't redirect run_queue stdout to the queue's own log file (it writes `outputs/runs/queue_<name>.log` itself; lines get duplicated).
+## Submissions
+- **v1_ens (current best):** `outputs/submissions/v1_ens/` = predictions.csv, model_weights.pt (410.5 MiB), ensemble.json/.md, inference_run{1,2}.log, validate.txt (ALL PASS), logs/ (full-run metrics, configs, train logs). Local RTX 5060 36-38 s wall, byte-identical re-run. **Not yet produced on a T4.**
+  Rebuild: `python scripts/bundle.py --ensemble outputs/ensemble/ensemble.json --source full --out <dir>/model_weights.pt` → `python inference_script.py --test_dir <test> --weights <dir>/model_weights.pt --output <dir>/predictions.csv`.
+- **v0_b0 (safety net):** `outputs/submissions/v0_b0/` (single B0, 13.8 s wall).
+- **Kaggle T4 kit for v1:** `outputs/kaggle_kit_v1.zip` (468 MB; bundle + script + validator + t4_run.py + 3,000 test images + local CSV). Folder: `outputs/kaggle_kit_v1/`. Instructions: `scripts/kaggle/README.md`.
 
 ## Pending user decisions
-- (none from this agent; audit grids approved 9 Nov.)
-- Watch: on fold 0 no big backbone beats B0 p2_final (PHASE3 §4 no-go needs +0.01 on 5 folds); decide after the 5-fold results.
+- None blocking. Optional: if the T4 run is > 2.5 min, accept the cut (drop B4@320 → p2_final + vitb_final, OOF 0.9052 / J 0.8988) or keep v1 as long as it is < 5 min (20-pt band).
 
-## Next actions
-1. Morning 10 Nov: check `outputs/runs/p3_step2.stdout`; Phase 3 summary + P4 verdicts + LOCO report; ensemble pool → `dfd.ensemble` (with/without `--variant tta_flip`).
-2. Full-data retrains of the chosen members (`--fold full`, nohup), bundle, inference, Kaggle T4 timing (`scripts/kaggle/`).
+## Next actions (10 Nov)
+1. **User: Kaggle T4 run** (`scripts/kaggle/README.md` steps B-D): upload `outputs/kaggle_kit_v1.zip` as a **private** dataset, import `scripts/kaggle/t4_timing.ipynb`, GPU T4, Internet on, Run All, download `t4_results.zip` into `outputs/kaggle/`. Check: sm_75 PASS, wall time (estimate ~1.6-2.4 min), validator PASS, re-run identical, label flips vs local.
+2. If T4 OK: the T4 `predictions.csv` becomes the submitted one (PHASE5 §6.2); upload v1 to the Drive folder as the safety copy (PHASE5 §7, 11 Nov).
+3. If T4 > 2.5 min: PHASE5 §5 cut order (no TTA already) → drop B4@320 (re-bundle `--member p2_final:full --member vitb_final:full` with the ensemble's T/threshold, or re-run `dfd.ensemble --runs p2_final vitb_final`) → `--batch_size 128`; re-time.
+4. Phase 6: fill report TODO(results) placeholders from the EXPERIMENTS rows (Phase 3 table, Phase 4 verdicts, LOCO, ensemble), Grad-CAM, cross-device diff once the T4 CSV exists.
+
+## Notes
+- `run_queue.py` does not handle `--fold full`; use `scripts/p5_full.sh` (pattern) or `dfd.train --fold full` directly with nohup/setsid.
+- Inference per member alone (local): B0 10.7 s (data-loading bound), B4@320 16.1 s, ViT-B 5.8 s; ensemble 31 s inference.
+- cnxs_final/full exists (pruned from the ensemble; available as an alternate member).
+- Don't redirect run_queue stdout to the queue's own log file.
