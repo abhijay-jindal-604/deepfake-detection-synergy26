@@ -13,7 +13,7 @@ Parent plan: `docs/PLAN.md` §8. Previous: `docs/PHASE5.md`. Decisions from the 
 | Grad-CAM grids (+2 bonus) | `src/dfd/gradcam.py` (started in Phase 4; manual hooks, ~80 lines, no new package) | For each ensemble member: a 4x4 grid of **validation** images (fold-0 model on fold-0 val; never test images) as TP / TN / FP / FN, image + heatmap overlay. Plus one grid of corrupted val images (snow, patches, pixelate) showing attention staying on the face. Plus the Phase 4 before/after grid. CNNs: Grad-CAM on the last conv stage. ViT: Grad-CAM on the last block's patch tokens reshaped to 14x14 (the standard "reshape transform"). |
 | loss/AUC curves | `scripts/plot_curves.py` (exists) | 5 folds per final member (train loss, val loss, val AUC raw vs EMA) + the full-data runs' train loss on top of the fold curves (the §3 check in PHASE5) |
 | val-C chart | `scripts/plot_valc.py` (new, ~40 lines) | per-corruption AUC bars: B0 baseline vs Phase 2 recipe vs final ensemble; held-out corruptions marked |
-| ablation table | `scripts/compare.py --markdown` | from EXPERIMENTS.md: every adopted/rejected change with Δ and verdict |
+| ablation table | `scripts/compare.py --md` | from EXPERIMENTS.md: every adopted/rejected change with Δ and verdict |
 | logs | copy `metrics.csv`, `eval.txt`, `oof_summary.txt` of the final runs + `EXPERIMENTS.md` | optional deliverable 7 |
 
 All figures go to `outputs/figures/` (git-ignored); the ones used in the report are copied to `docs/report/fig/` (committed, small PNGs).
@@ -44,7 +44,7 @@ Writing order: §1, §4, §3 on 12 Nov (they draw on finished work), §2, §5, �
 1. One-paragraph overview + result numbers.
 2. **Setup:** `uv venv --python 3.10 .venv && uv pip install -r requirements.txt` (training, full pins, cu128 index) or `requirements-infer.txt` (inference only).
 3. **Inference (what the organisers run):** `python inference_script.py --test_dir ./test/images/ --weights ./model_weights.pt --output predictions.csv`, plus the expected T4 time.
-4. **Full reproduction:** `export DF_DATA_ROOT=...`; `python -m dfd.groups` (optional; `data/folds.csv` is committed); `python -m dfd.masks`; `python -m dfd.train --config configs/final/<member>.yaml --fold all` (CV) and `--fold full` (final); `python -m dfd.ensemble`; `python scripts/bundle.py`; then inference. Expected time per step on an 8 GB GPU.
+4. **Full reproduction:** `export DF_DATA_ROOT=...`; `python -m dfd.groups` (optional; `data/folds.csv` is committed); `python -m dfd.masks`; `python -m dfd.train --config configs/p3/<member>_final.yaml` (or `configs/p2/p2_final.yaml`) `--fold all` (CV) and `--fold full` (final); `python -m dfd.ensemble`; `python scripts/bundle.py`; then inference. Expected time per step on an 8 GB GPU.
 5. Repo map; where results are logged; licence note (our code only; the dataset isn't redistributed).
 
 `requirements-infer.txt`: python 3.10; `torch==2.11.0`, `torchvision==0.26.0` (timm imports it), `timm==1.0.30`, `numpy==2.2.6`, `pandas==2.3.3`, `opencv-python-headless==5.0.0.93`, `pillow`, `safetensors`, `huggingface-hub`, `pyyaml`, with versions copied from `requirements.txt`, plus a cu128 `--extra-index-url` (or whatever Phase 5 §5 had to pin for sm_75).
@@ -97,7 +97,7 @@ abhijayjindal604_Synergy26_Deepfake/            (Google Drive folder, "Anyone wi
 2. Download `model_weights.pt` **from the public Drive link** (as the organisers would).
 3. Run `inference_script.py` on `test/images/` → `validate_predictions.py` → compare with the submitted CSV: local GPU vs T4 CSV within 1e-3, label flips listed.
 4. On Kaggle (T4, fresh session, internet off for the run): same steps; the CSV must be **byte-identical** to the submitted one (same GPU class + deterministic script).
-5. Training-code smoke from the clone: `python -m dfd.train --config configs/final/<member>.yaml --fold 0 --limit 512 --epochs 1 --valc_limit 64 --no_log` runs. This proves the source code is complete.
+5. Training-code smoke from the clone: `python -m dfd.train --config configs/p2/p2_final.yaml --fold 0 --limit 512 --epochs 1 --valc_limit 64 --no_log` runs. This proves the source code is complete.
 
 ## 8. Calendar (Phase 6)
 | day | work |

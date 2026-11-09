@@ -4,8 +4,10 @@
 
 For every real-fake pair in data/pairs.csv (same-label pairs ignored):
   1. grey + Gaussian blur σ=2 on both images;
-  2. cv2.phaseCorrelate for a translation; reject if |shift| > MAX_SHIFT px or response < MIN_RESPONSE;
-     the real is shifted into the fake's frame before differencing;
+  2. alignment. Default (--align ecc, ALIGN below): cv2.phaseCorrelate translation (if plausible) initialises an
+     affine ECC (coarse 112 -> fine 224); reject if ECC cc < MIN_ECC_CC, scale/anisotropy out of range or shift >
+     MAX_SHIFT_ECC. --align phase = the original plan: translation only, reject if |shift| > MAX_SHIFT px or
+     response < MIN_RESPONSE. The real is warped into the fake's frame before differencing;
   3. d = |fake - real| blurred, Otsu threshold, open 5x5, close 11x11, largest component, fill holes,
      feather (blur 7) -> soft mask in [0, 1];
   4. reject if mask area outside [MIN_AREA, MAX_AREA] or mean d outside the mask > MAX_OUTSIDE_D

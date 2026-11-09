@@ -365,7 +365,7 @@ def log_experiment(run: str, cfg: dict, s: dict, notes: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", required=True)
-    ap.add_argument("--fold", default="0", help="fold index, comma list (0,1,2) or 'all'")
+    ap.add_argument("--fold", default="0", help="fold index, comma list (0,1,2), 'all', or 'full' (100%% of the data, final model)")
     ap.add_argument("--data_root")
     ap.add_argument("--run_name", help="default: config file stem")
     ap.add_argument("--epochs", type=int)

@@ -3,7 +3,7 @@
 Two stages, because the similarity threshold is confirmed by a human in between:
 
   python -m dfd.groups candidates --data_root <root>      # hashes, embeddings, candidate pairs, audit grids
-  python -m dfd.groups folds --threshold 0.90 --data_root <root>   # union-find groups + StratifiedGroupKFold
+  python -m dfd.groups folds --threshold 0.82 --data_root <root>   # (0.82 = the value confirmed on the audit grids) union-find groups + StratifiedGroupKFold
 
 Never touches test/images.
 """

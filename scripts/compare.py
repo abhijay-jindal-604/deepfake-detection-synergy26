@@ -5,15 +5,16 @@ Usage:
       [--threshold 0.004] [--veto 0.01] [--md] [--settings]
 
 RUN_A is the reference; every other run is compared to it. Runs are directory
-names under outputs/runs/. Read-only.
+names under outputs/runs/ ($DFD_RUNS_DIR overrides it). Read-only.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNS = ROOT / "outputs" / "runs"
+RUNS = Path(os.environ["DFD_RUNS_DIR"]) if os.environ.get("DFD_RUNS_DIR") else ROOT / "outputs" / "runs"
 COLS = ["clean", "seen", "heldout", "worst", "selection"]
 
 

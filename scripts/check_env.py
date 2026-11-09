@@ -11,7 +11,8 @@ print("cuda available", ok)
 if not ok:
     sys.exit("FAIL: CUDA not available (driver/GPU state). Fix before training.")
 print("device        ", torch.cuda.get_device_name(0), "| capability", torch.cuda.get_device_capability(0))
-assert torch.cuda.get_device_capability(0) == (12, 0), "expected Blackwell sm_120"
+if torch.cuda.get_device_capability(0) != (12, 0):
+    print("WARNING: not the Blackwell sm_120 dev GPU (fine on other GPUs, e.g. a T4 = sm_75)")
 
 a = torch.randn(1024, 1024, device="cuda")
 with torch.autocast("cuda", dtype=torch.bfloat16):
