@@ -49,3 +49,5 @@ _Session B verdict (13 Nov):_ P7 screen finished, no errors. p7_mixup mean Δsel
 - Inference per member alone (local): B0 10.7 s (data-loading bound), B4@320 16.1 s, ViT-B 5.8 s; ensemble 31 s inference.
 - cnxs_final/full exists (pruned from the ensemble; available as an alternate member).
 - Don't redirect run_queue stdout to the queue's own log file.
+
+_Session B follow-up (13 Nov):_ p7_res288 completed all 5 folds + full retrain (no errors in logs). 5-fold compare vs p2_final: mean Δselection +0.0021 (f3 −0.0001), held-out +0.0037, worst +0.0232 -> TIE. Ensemble swap (p7_res288 for p2_final, same method as v1): OOF AUC 0.9072 vs v1 0.9074; 4-member 0.9076 (pruned by the search rule) -> both REJECT, v1_ens stays (`outputs/ensemble_v2c/`).
