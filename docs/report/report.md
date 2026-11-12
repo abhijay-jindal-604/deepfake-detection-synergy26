@@ -3,7 +3,7 @@
 **Deepfake ML Hackathon, Synergy '26 (IIIT Bangalore)** · Team **abhijayjindal604** (solo) · Technical report
 **Final build:** 12 Nov 2026 (submission `v1_ens`, three-model ensemble).
 
-Source code: `<GitHub URL>` TODO(github) · Weights SHA-256: see §7.4 · All numbers are grouped 5-fold cross-validation on the provided training set unless stated otherwise.
+Source code: <https://github.com/abhijay-jindal-604/deepfake-detection-synergy26> · Weights SHA-256: see §7.4 · All numbers are grouped 5-fold cross-validation on the provided training set unless stated otherwise.
 
 ---
 
