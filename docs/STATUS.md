@@ -33,6 +33,8 @@ v1_ens stays the submission unless B produces a verified v2 (gate below) by **13
 
 **Session A:** fill the 22 `TODO(results)` in `docs/report/report.md` from EXPERIMENTS rows; figures (Grad-CAM TP/TN/FP/FN grid per member, loss/AUC curves, val-C chart, architecture diagram) into `docs/report/fig/`; build the PDF (`scripts/build_report.py`, >= 4 pages); TF export 13 Nov time-boxed to 18:00; remove stale `.claude/worktrees/`; history scrub + public GitHub push (after user OK); 14 Nov: zip + Drive (report, final files), public-link check in incognito, submit on Unstop by ~18:00, tag `v1.0-submission`.
 
+_Session A progress (12 Nov):_ done: 22 TODO(results) filled (1d34d13); figures in `docs/report/fig/` + `scripts/make_figures.py` (b54cdae); all 4 stale worktrees removed (unique P4 smoke runs archived to `outputs/archive/wt_a689_p4_runs/`). Remaining report markers: TODO(fig) Grad-CAM paragraph, TODO(tf), TODO(github), TODO(tag). Next: PDF build.
+
 **Session B:** B0 screen on folds 0,1,2 vs p2_final: `p7_mixup` (mixup, untried; PHASE2 cut) and `p7_res288` (B0 input 288, untried). Gate: `scripts/compare.py p2_final <run> --folds 0,1,2 --threshold 0.006` (Δselection >= 0.006 and > 0 on all 3 folds). If a winner: port to b4_320/vitb (5 folds) → full retrains → `dfd.ensemble` → OOF must beat 0.9074 → `scripts/bundle.py` → local validator + double run → new Kaggle kit + T4 run (<= 2.5 min cold) → hand the v2 folder to session A. If no winner: record REJECT rows and stop.
 
 ## Notes
