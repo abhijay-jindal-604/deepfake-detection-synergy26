@@ -15,19 +15,25 @@ Phases 2, 3, 4 done; Phase 5 ensemble chosen and **submission v1_ens built** (lo
 Nothing. GPU free.
 
 ## Submissions
-- **v1_ens (current best):** `outputs/submissions/v1_ens/` = predictions.csv, model_weights.pt (410.5 MiB), ensemble.json/.md, inference_run{1,2}.log, validate.txt (ALL PASS), logs/ (full-run metrics, configs, train logs). Local RTX 5060 36-38 s wall, byte-identical re-run. **Not yet produced on a T4.**
+- **v1_ens (current best):** `outputs/submissions/v1_ens/` = predictions.csv, model_weights.pt (410.5 MiB), ensemble.json/.md, inference_run{1,2}.log, validate.txt (ALL PASS), logs/ (full-run metrics, configs, train logs). Local RTX 5060 36-38 s wall, byte-identical re-run. **T4 verified 12 Nov (Kaggle): cold 72-111 s over two sessions (20-pt band; report in outputs/kaggle/t4_out/), sm_75 PASS, 0 label flips vs local, max |Δconf| 1.1e-3. Local CSV kept as the submitted one; uploaded to Drive folder `abhijayjindal604_deepfake_submission` (private; weights + report still to add by hand).**
   Rebuild: `python scripts/bundle.py --ensemble outputs/ensemble/ensemble.json --source full --out <dir>/model_weights.pt` → `python inference_script.py --test_dir <test> --weights <dir>/model_weights.pt --output <dir>/predictions.csv`.
 - **v0_b0 (safety net):** `outputs/submissions/v0_b0/` (single B0, 13.8 s wall).
 - **Kaggle T4 kit for v1:** `outputs/kaggle_kit_v1.zip` (468 MB; bundle + script + validator + t4_run.py + 3,000 test images + local CSV). Folder: `outputs/kaggle_kit_v1/`. Instructions: `scripts/kaggle/README.md`.
 
 ## Pending user decisions
-- None blocking. Optional: if the T4 run is > 2.5 min, accept the cut (drop B4@320 → p2_final + vitb_final, OOF 0.9052 / J 0.8988) or keep v1 as long as it is < 5 min (20-pt band).
+- OK to make the Drive folder public ("Anyone with the link can view"); required before submitting.
+- OK to scrub the 8 Co-Authored-By trailers from git history before the public GitHub push.
+- User must drag `outputs/submissions/v1_ens/model_weights.pt` (410 MB, sha256 ab8d0c7a...) into the Drive folder by hand (connector limit 10 MB).
 
-## Next actions (10 Nov)
-1. **User: Kaggle T4 run** (`scripts/kaggle/README.md` steps B-D): upload `outputs/kaggle_kit_v1.zip` as a **private** dataset, import `scripts/kaggle/t4_timing.ipynb`, GPU T4, Internet on, Run All, download `t4_results.zip` into `outputs/kaggle/`. Check: sm_75 PASS, wall time (estimate ~1.6-2.4 min), validator PASS, re-run identical, label flips vs local.
-2. If T4 OK: the T4 `predictions.csv` becomes the submitted one (PHASE5 §6.2); upload v1 to the Drive folder as the safety copy (PHASE5 §7, 11 Nov).
-3. If T4 > 2.5 min: PHASE5 §5 cut order (no TTA already) → drop B4@320 (re-bundle `--member p2_final:full --member vitb_final:full` with the ensemble's T/threshold, or re-run `dfd.ensemble --runs p2_final vitb_final`) → `--batch_size 128`; re-time.
-4. Phase 6: fill report TODO(results) placeholders from the EXPERIMENTS rows (Phase 3 table, Phase 4 verdicts, LOCO, ensemble), Grad-CAM, cross-device diff once the T4 CSV exists.
+## Next actions (from 12 Nov evening): two parallel sessions
+Ownership, to avoid collisions: **Session A (report/submission)** owns `docs/report/`, `README.md`, Drive, GitHub, TF export, packaging.
+**Session B (improvement)** owns new `configs/p7/`, new runs under `outputs/runs/`, and appends rows to `docs/EXPERIMENTS.md`.
+Both: `git add` only your own paths; GPU is shared (B's training queue has priority; A's Grad-CAM/curves are short jobs, run them between B's runs or on CPU).
+v1_ens stays the submission unless B produces a verified v2 (gate below) by **13 Nov 20:00 IST**.
+
+**Session A:** fill the 22 `TODO(results)` in `docs/report/report.md` from EXPERIMENTS rows; figures (Grad-CAM TP/TN/FP/FN grid per member, loss/AUC curves, val-C chart, architecture diagram) into `docs/report/fig/`; build the PDF (`scripts/build_report.py`, >= 4 pages); TF export 13 Nov time-boxed to 18:00; remove stale `.claude/worktrees/`; history scrub + public GitHub push (after user OK); 14 Nov: zip + Drive (report, final files), public-link check in incognito, submit on Unstop by ~18:00, tag `v1.0-submission`.
+
+**Session B:** B0 screen on folds 0,1,2 vs p2_final: `p7_mixup` (mixup, untried; PHASE2 cut) and `p7_res288` (B0 input 288, untried). Gate: `scripts/compare.py p2_final <run> --folds 0,1,2 --threshold 0.006` (Δselection >= 0.006 and > 0 on all 3 folds). If a winner: port to b4_320/vitb (5 folds) → full retrains → `dfd.ensemble` → OOF must beat 0.9074 → `scripts/bundle.py` → local validator + double run → new Kaggle kit + T4 run (<= 2.5 min cold) → hand the v2 folder to session A. If no winner: record REJECT rows and stop.
 
 ## Notes
 - `run_queue.py` does not handle `--fold full`; use `scripts/p5_full.sh` (pattern) or `dfd.train --fold full` directly with nohup/setsid.
