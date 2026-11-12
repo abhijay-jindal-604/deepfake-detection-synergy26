@@ -1,7 +1,7 @@
 # Robust Deepfake Face Detection under Heavy Corruption
 
 **Deepfake ML Hackathon, Synergy '26 (IIIT Bangalore)** · Team **abhijayjindal604** (solo) · Technical report
-<!-- TODO(results): add the public GitHub URL and the date of the final build here. -->
+**Final build:** 12 Nov 2026 (submission `v1_ens`, three-model ensemble).
 
 Source code: `<GitHub URL>` · Weights SHA-256: see §7.4 · All numbers are grouped 5-fold cross-validation on the provided training set unless stated otherwise.
 
@@ -21,7 +21,7 @@ Source code: `<GitHub URL>` · Weights SHA-256: see §7.4 · All numbers are gro
 4. **ImageNet-pretrained backbones only** (EfficientNet, ConvNeXt, ViT from `timm`), fine-tuned on the provided data. No external data and no deepfake-specific weights. Test images are used only for the final prediction.
 5. **Fast, deterministic inference.** The organisers' exact CLI, one weights bundle, batched FP16 inference, and a byte-identical CSV on re-run.
 
-**Headline numbers so far.** These come from the Phase 2 single-model recipe, EfficientNet-B0:
+**Single-model headline numbers.**
 
 | metric (grouped 5-fold, 7,000 OOF predictions) | B0 baseline | Phase 2 recipe (`p2_final`) |
 |---|---|---|
@@ -33,8 +33,20 @@ Source code: `<GitHub URL>` · Weights SHA-256: see §7.4 · All numbers are gro
 
 The baseline was scored at its best epoch, which flatters it; `p2_final` was scored at the fixed last EMA epoch.
 
-<!-- TODO(results): replace/extend the table with the FINAL ensemble: OOF AUC, val-C seen/held-out/worst, F1 + threshold, T4 wall time, bundle size; one sentence on the members (e.g. "EfficientNet-B4@320 + ConvNeXt-S + ViT-B/16, temperature-scaled logit average"). -->
-<!-- TODO(results): architecture overview figure (docs/report/fig/architecture.png). -->
+**Final submission (`v1_ens`).** The shipped model is a **temperature-scaled logit average of three members: EfficientNet-B0 (`p2_final` recipe) + EfficientNet-B4 @ 320 + ViT-B/16**, equal weights, no test-time augmentation.
+
+| metric (grouped 5-fold, 7,000 OOF predictions) | best single member | **final ensemble** |
+|---|---|---|
+| OOF AUC-ROC | 0.9009 (B4 @ 320) | **0.9074** |
+| mean val-C AUC (all 57 settings) | 0.8848 (ConvNeXt-S, not shipped) | **0.8945** |
+| worst val-C setting | 0.742 (B0, pixelate@3) | **0.768** (pixelate@3) |
+| objective J = 0.5 × OOF AUC + 0.5 × val-C | 0.8910 (ConvNeXt-S) | **0.9010** |
+| label threshold (OOF F1-max) / F1 / accuracy | 0.5 | **0.4282** / 0.8784 / 0.8764 (at 0.5: 0.8758 / 0.8757) |
+| inference, 3,000 test images, **Tesla T4 (Kaggle)** | n/a | **110.8 s cold (1.85 min), 60.4 s warm**; 20-pt band (< 5 min) |
+| bundle `model_weights.pt` | 15.6 MiB (B0 alone) | **410.5 MiB** (FP32, 3 members) |
+
+The ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member, and it masks B4's weakness to strong noise (val-C noise-mean 0.885 against 0.731 for B4 alone).
+![Architecture overview: three members, per-member temperature, logit average, ensemble calibration, threshold](fig/architecture.png)
 
 ---
 
@@ -114,18 +126,18 @@ Every model is the same thin wrapper around a `timm` backbone (`src/dfd/models.p
 
 Excluded on purpose: CLIP, DINO/DINOv2, MAE, SAM, EVA and SigLIP weights. These are web-scale or self-supervised weights, not ImageNet-trained, and the rule text allows "pre-trained ImageNet architectures".
 
-<!-- TODO(results): Phase 3 5-fold results per backbone (OOF AUC, val-C seen/held-out/worst, selection, min/fold) and the go/no-go vs B0 (+0.01 rule). State which members made the ensemble. -->
+**Phase 3 outcome (5 folds, last EMA checkpoint; details in §5.2).** No big backbone beat B0 by the +0.01 selection margin, so the formal go/no-go (PHASE3 §4) is a **no-go**. The larger models were kept only for ensemble diversity. B4 @ 320 has the best OOF AUC (0.9009) but is fragile to strong noise, ViT-B and ConvNeXt-S tie with B0 on the selection score. **The ensemble members are B0 (`p2_final`), B4 @ 320 and ViT-B/16**; ConvNeXt-S was pruned (removing it costs 0.0009 < 0.002 in J).
 
 ### 2.3 Training-only auxiliary components (Phase 4)
 
-These components are implemented and were ablated on B0. Whether they are adopted is pending (§5.3). **None of them adds any inference cost.**
+These components are implemented and were ablated on B0. **None was adopted** (§5.3). **None of them adds any inference cost.**
 
 - **Pair-difference masks.** For a real/fake pair of the same photo, |fake − real| after affine (ECC) alignment marks the swapped region. The quality gates are strict: of 187 candidate real-fake pairs, **31 masks** were accepted, and the user audited them visually.
 - **Auxiliary mask head** (Face X-ray idea). This is a small Conv3×3 → BN → ReLU → Conv1×1 head on the backbone's stride-16 feature map, trained to predict the manipulated-pixel mask. Its loss weight is λ = 0.2. Real images get an all-zero target, and fakes without a mask are ignored. The head runs only in training mode, and its weights are stripped from the inference bundle.
 - **Self-Blended Images (SBI) pseudo-fakes.** A real training image is blended with a slightly warped and colour-shifted copy of itself through a face-region mask (prior from the pair masks), and the result is labelled fake. This teaches the generic signature of face blending rather than one generator's fingerprint.
 - **Pair-aware batching.** Images from the same source group are placed in one batch, so the model has to find the difference rather than the scene.
 
-<!-- TODO(results): Phase 4 verdicts (p4_sbi03, p4_sbi06, p4_sbi_mask, p4_maskhead, p4_pairbatch, p4_sbi_only vs p2_final on folds 0-2, threshold 0.006) + LOCO result; which components were ported to the big backbones. -->
+**Phase 4 outcome (B0, folds 0-2 vs `p2_final`, threshold 0.006; details in §5.3).** All five components were rejected or tied, so **none was ported to the big backbones** and none is in the shipped recipe. SBI at ratios 0.3 / 0.6 and SBI + mask head are clear regressions (selection Δ −0.014 / −0.020 / −0.013). The mask head (Δ −0.0016) and pair-aware batching (Δ −0.0010) are ties, so the simpler recipe is kept. An SBI-only diagnostic scores 0.53 AUC, so SBI pseudo-fakes do not transfer to this dataset.
 
 ### 2.4 Ensemble (Phase 5)
 
@@ -139,7 +151,15 @@ The ensemble combination is decided by `src/dfd/ensemble.py` from out-of-fold ev
    - A member is kept only if removing it costs ≥ 0.002 in J.
    - A ≥ 2-family ensemble is preferred if it is within 0.003 of the best single-family one.
 
-<!-- TODO(results): final ensemble table (members, T_m, w_m, T_ens, threshold, J, OOF AUC, val-C) from outputs/ensemble/ensemble.json; ensemble vs best single member; optimism-check numbers; flip-TTA decision (adopt only if J +0.003 and T4 time < 3 min). -->
+**Result (`outputs/ensemble/ensemble.json`, 5 folds, pool of B0, ConvNeXt-S, B4 @ 320, ViT-B).**
+
+| member | family | T_m | w_m | OOF AUC alone | val-C alone |
+|---|---|---|---|---|---|
+| `p2_final` (EfficientNet-B0) | EfficientNet | 1.129 | 1/3 | 0.8964 | 0.8789 |
+| `b4_320_final` (EfficientNet-B4 @ 320) | EfficientNet | 1.002 | 1/3 | 0.9009 | 0.8590 |
+| `vitb_final` (ViT-B/16) | ViT | 0.984 | 1/3 | 0.8981 | 0.8830 |
+
+T_ens = 0.917, threshold = 0.4282, **OOF AUC 0.9074, val-C 0.8945, J 0.9010**. The best single member is B4 by OOF AUC (0.9009) and ConvNeXt-S by J (0.8910), so the ensemble gains +0.0065 AUC and +0.010 J. The best 4-member set (with ConvNeXt-S) has J 0.9019 and OOF AUC 0.9072. The pruning rule drops ConvNeXt-S because removing it costs only 0.0009 < 0.002 in J, which also saves inference time. **Tuned weights never beat equal weights by 0.003** (tuned J 0.90099 vs equal 0.90097), so the optimism check on folds 3-4 was never triggered and equal weights are shipped. **Flip-TTA was rejected**: the best TTA ensemble has J 0.9018 against 0.9019 without it (needs ≥ +0.003), and its pruned choice has J 0.8990 < 0.9010. TTA would also have doubled the forward passes.
 
 ### 2.5 Inference design
 
@@ -181,7 +201,11 @@ At the top level it holds T_ens, the threshold, the TTA flag, mean/std, library 
 - **Total wall time: 16.3 s cold, 13.8 s warm.**
 - Two runs gave **byte-identical** CSVs, and the validator passed every check.
 
-<!-- TODO(results): T4 timing (Kaggle, cold run = honest number) for the final bundle; local vs T4 max |Δconfidence| and label flips; efficiency band. -->
+**Measured on a Tesla T4 (Kaggle, sm_75, torch 2.11.0+cu128, Python 3.10; final bundle `v1_ens`, 3,000 test images).** The cold run is the honest number.
+
+- **Cold: 110.8 s (1.85 min)**: load 3.2 s, inference 102.8 s, 29.2 img/s. **Warm: 60.4 s** (inference 52.7 s, 57.0 img/s). An earlier session gave cold 72.4 s and warm 61.6 s, so the cold time varies between 72 and 111 s with Kaggle's disk cache.
+- Both are in the **20-point band (< 5 min)** and under our 2.5-min internal budget.
+- **T4 vs local RTX 5060 predictions:** max |Δconfidence| = 1.10e-3, mean 8.7e-5, Spearman 0.999999, **0 label flips**. The validator passed and the T4 re-run was byte-identical.
 
 ---
 
@@ -241,7 +265,16 @@ All backbones inherit the Phase 2 recipe. Only the LR and the architecture-speci
 - **EfficientNet-B4 batch size.** B4 at 320 trains at batch 32 with cuDNN autotuning off. In the probe, autotuning near full memory made the run hang. Turning it off also makes B4 training bit-reproducible.
 - **EfficientNet-B4 LR.** We started from √(32/64) × 3e-4 ≈ 2.1e-4, using the square-root batch-size rule.
 
-<!-- TODO(results): one row per adopted Phase 4 hyperparameter (SBI ratio, mask weight λ, pair batching) with Δ and verdict; flip-TTA decision; ensemble weights/temperatures (equal vs tuned) with the optimism-check numbers. -->
+**Phase 4 hyperparameters (none adopted).** Δ is the mean selection-score change against `p2_final` on folds 0-2.
+
+| setting | tried | Δ selection | verdict |
+|---|---|---|---|
+| SBI ratio | 0.3 / 0.6 of n_real per epoch | −0.0136 / −0.0200 | reject (more SBI is worse) |
+| SBI 0.3 + mask head | λ = 0.2 | −0.0130 | reject |
+| mask-head weight λ | 0.2 (alone) | −0.0016 | tie, keep simpler |
+| pair-aware batching | ≤ 4 per group | −0.0010 | tie, keep simpler |
+
+**Ensemble and TTA.** Weights are equal (1/3 each) with T_m = 1.129 / 1.002 / 0.984 and T_ens = 0.917. Tuned weights gained 0.00002 in J against the 0.003 bar, so tuning was rejected without an optimism check. Flip-TTA gained 0.000 against the 0.003 bar and is not used.
 
 ### 3.4 Decision threshold for the `label` column
 
@@ -251,7 +284,7 @@ For the Phase 2 B0 recipe the F1-optimal OOF threshold is 0.506, essentially 0.5
 
 On the organiser-style **80/20 split (fold 0, `random_state=42`)** the results are AUC 0.888, F1 0.864 and accuracy 0.858 at 0.5. Fold 0 of our `StratifiedGroupKFold(5, shuffle=True, random_state=42)` is an 80/20 stratified split that is *also* grouped, which is stricter than the suggested ungrouped split.
 
-<!-- TODO(results): threshold, F1, accuracy for the final ensemble (OOF and fold 0). -->
+**Final ensemble.** The OOF F1-optimal threshold is **0.4282**. At that threshold OOF F1 = **0.8784** and accuracy = **0.8764** (at 0.5: F1 0.8758, accuracy 0.8757), and 51.3 % of OOF images are predicted fake. On the organiser-style 80/20 split (fold 0) the ensemble reaches AUC **0.8938**, F1 0.8720 and accuracy 0.8644 at 0.4282. The per-fold AUCs are 0.894 / 0.914 / 0.921 / 0.890 / 0.919. On the test set 50.8 % of images are predicted fake. The threshold moves only 22 test confidences (within ±0.02), so it has almost no effect on AUC.
 
 ---
 
@@ -323,7 +356,9 @@ Each chosen configuration is retrained once on all 7,000 images (`--fold full`) 
 - **Risk control.** The full-data run has no validation set of its own, so its training-loss curve must match the 5-fold mean at every epoch. For B0 the match was within **±1.7 %**, with a final training loss of 0.376 under label smoothing 0.10.
 - **Fallback.** If a member's curve looks abnormal, we ship its averaged fold-0 and fold-1 models instead.
 
-<!-- TODO(results): loss/AUC curve figure (5 folds per final member, raw vs EMA, with the full-data train-loss curve overlaid) -> docs/report/fig/curves_<member>.png; full-data curve-match numbers for each final member. NOTE: scripts/plot_curves.py needs val_loss, so it cannot plot full/metrics.csv as-is. -->
+![Training and validation loss/AUC curves per final member (5 folds, raw vs EMA), with the full-data train-loss curve overlaid](fig/curves.png)
+
+**Full-data curve match** (final train loss vs the 5-fold mean, per epoch; maximum deviation): B0 1.7 %, B4 @ 320 3.3 %, ViT-B 2.0 % (ConvNeXt-S 2.3 %, retrained but pruned). All are within the ±10 % acceptance band, so the full-data models were accepted. Final training losses (label smoothing 0.10) are 0.376 (B0), 0.408 (B4 @ 320) and 0.430 (ViT-B). Retrains took 7 min (ConvNeXt-S), 10 min (B4 @ 320) and 8 min (ViT-B).
 
 ### 4.6 Compute
 
@@ -336,7 +371,7 @@ All training ran on one laptop RTX 5060 (8 GB, Blackwell) with BF16 autocast and
 | B4 @ 320 | ≈ 12.4 min |
 | ViT-B | ≈ 9.9 min |
 
-<!-- TODO(results): total GPU-hours used. -->
+The 5-fold runs of the four Phase 3 models cost about 3.0 GPU-hours (20 + 47 + 62 + 50 min), and the full-data retrains about 0.5 GPU-hours. The earlier exploratory runs were logged in `docs/EXPERIMENTS.md` but not timed individually, so we do not claim a project total.
 
 ---
 
@@ -354,15 +389,53 @@ Corruption augmentation gives most of the robustness gain: held-out val-C rose b
 
 ### 5.2 Phase 3: larger backbones
 
-<!-- TODO(results): 5-fold table for cnxs_final, b4_320_final, vitb_final vs p2_final (OOF AUC, val-C seen/held-out/worst, selection), OOF correlation matrix between members, verdict on the PHASE3 §4 go/no-go (+0.01). Note: on fold 0 none of the big backbones beat B0 (B4 matched B0's clean AUC but had lower val-C: 0.845 vs 0.866). -->
+| model (5 folds, last EMA) | clean AUC (mean) | OOF AUC | val-C seen | val-C held-out | worst cell | selection | min fold selection | verdict vs B0 (thr 0.006) |
+|---|---|---|---|---|---|---|---|---|
+| **B0 `p2_final`** (reference, shipped) | 0.8968 | 0.8964 | 0.8825 | 0.8709 | 0.742 | 0.8878 | 0.8688 | n/a |
+| ConvNeXt-S `cnxs_final` | 0.8980 | 0.8972 | 0.8854 | 0.8833 | 0.746 | **0.8914** | 0.8753 | TIE (+0.0036), pruned |
+| **B4 @ 320 `b4_320_final`** (shipped) | 0.9009 | **0.9009** | 0.8767 | 0.8206 | 0.588 | 0.8800 | 0.8630 | REJECT as single (−0.0079; held-out −0.050) |
+| **ViT-B/16 `vitb_final`** (shipped) | 0.8984 | 0.8981 | 0.8844 | 0.8802 | 0.745 | 0.8907 | 0.8720 | TIE (+0.0029) |
+
+**Go/no-go: no-go.** The PHASE3 §4 rule needed ≥ +0.01 selection over B0 and no backbone reached it (best +0.0036). B4 @ 320 is the best clean model but is fragile to strong noise (shot, speckle and Gaussian noise at severity 3 give about 0.59). This matches the fold-0 sanity check, where no big backbone beat B0 (B4 matched B0's clean AUC but had lower val-C, 0.845 vs 0.866). We froze features and did not tune the big backbones further. Their value is **ensemble diversity**. OOF logit correlations between members are Pearson 0.878-0.928 (Spearman 0.82-0.88): lowest for B0 vs ConvNeXt-S (0.878), highest for ConvNeXt-S vs ViT-B (0.928). Flip-TTA on the OOF predictions adds only +0.0007 to +0.0010 per model.
 
 ### 5.3 Phase 4: pairs, SBI and the unseen-method proxy
 
-<!-- TODO(results): p4 ablation table vs p2_final (3 folds, Δ, verdict); pair vs non-pair AUC breakdown; LOCO (leave-one-cluster-out) table: held-out-cluster AUC vs reference for p2_final (and the SBI recipe if run). -->
+Each variant was run on B0 for folds 0-2 and compared with `p2_final` using `scripts/compare.py --threshold 0.006`.
+
+| variant | Δ clean | Δ seen | Δ held-out | Δ worst | Δ selection | verdict |
+|---|---|---|---|---|---|---|
+| `p4_sbi03` (SBI ratio 0.3) | −0.0085 | −0.0105 | −0.0364 | −0.0274 | −0.0136 | REJECT |
+| `p4_sbi06` (SBI ratio 0.6) | −0.0128 | −0.0172 | −0.0488 | −0.0412 | −0.0200 | REJECT |
+| `p4_sbi_mask` (SBI 0.3 + mask head) | −0.0075 | −0.0109 | −0.0355 | −0.0344 | −0.0130 | REJECT |
+| `p4_maskhead` (λ = 0.2) | +0.0000 | −0.0005 | −0.0089 | −0.0008 | −0.0016 | TIE, simpler kept |
+| `p4_pairbatch` | −0.0009 | −0.0001 | −0.0035 | +0.0012 | −0.0010 | TIE, simpler kept |
+
+`p4_sbi_only` (fold 0, SBI pseudo-fakes in place of the real fakes) scores clean AUC **0.532** and selection 0.526, so the SBI pseudo-fakes do **not** transfer to this dataset's fakes. The data are in-the-wild face swaps with heavy corruption, not the blending-boundary artefacts SBI imitates. This also explains why mixing them in hurts, and more SBI hurts more. **Phase 4 therefore adds nothing to the final recipe.** On fold 0, fakes that belong to a real/fake pair group score AUC 0.81 against 0.89 for non-pair fakes, but only 19 validation fakes are pair fakes, so that gap is too noisy to act on.
+
+**LOCO (leave-one-cluster-out, `p2_final`, fold 0, k = 4 ImageNet-feature clusters).**
+
+| held-out cluster | AUC held out | AUC when the cluster was seen | gap |
+|---|---|---|---|
+| 0 | 0.818 | 0.879 | 0.062 |
+| 1 | 0.806 | 0.885 | 0.079 |
+| 2 | 0.864 | 0.908 | 0.044 |
+| 3 | 0.631 | 0.876 | 0.245 |
+| **mean** | **0.780** | **0.889** | **0.107** |
+
+Content-matched reals give the same picture (0.870 / 0.866 / 0.895 / 0.651), so the gap is not a real-image artefact. Cluster 3 (606 fakes) is a fake style that cannot be inferred from the other three. The clusters are content and corruption clusters, not generation methods, so we expect a real AUC drop on unseen generators in the test set. The second LOCO recipe (SBI) was not run because SBI was rejected.
 
 ### 5.4 Ensemble and test-time augmentation
 
-<!-- TODO(results): ensemble vs best single member (J, OOF AUC, val-C), equal vs tuned weights, optimism check on folds 3-4, flip-TTA with/without, final threshold/F1/accuracy. -->
+| configuration | OOF AUC | val-C | J |
+|---|---|---|---|
+| best single by OOF AUC (B4 @ 320) | 0.9009 | 0.8590 | 0.8800 |
+| best single by J (ConvNeXt-S) | 0.8972 | 0.8848 | 0.8910 |
+| 4 members, equal weights | 0.9072 | 0.8966 | 0.9019 |
+| **3 members B0 + B4 + ViT-B, equal weights (shipped)** | **0.9074** | **0.8945** | **0.9010** |
+| same, tuned weights | n/a | n/a | 0.9010 (+0.00002, rejected) |
+| B0 + ViT-B (2 members) | 0.9052 | 0.8925 | 0.8988 |
+
+The shipped ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member. The optimism check on folds 3-4 never ran because tuned weights did not clear the 0.003 gain bar. **Flip-TTA** gives J 0.9018 against 0.9019 without it, so it is rejected (and would double the forward passes). The final threshold is 0.4282 with F1 0.8784 and accuracy 0.8764 (§3.4). Per-fold AUC is 0.894 / 0.914 / 0.921 / 0.890 / 0.919.
 
 ### 5.5 Explainability (Grad-CAM)
 
@@ -372,11 +445,21 @@ Grad-CAM is computed with `src/dfd/gradcam.py`, a manual-hook implementation tha
 - **ViT:** it is taken on the residual stream entering the last block, with patch tokens reshaped to 14×14.
 - **Target:** the target score is the evidence for the predicted class.
 
-<!-- TODO(results): Grad-CAM figures: (a) TP/TN/FP/FN grid per ensemble member (fold-0 model on fold-0 val), (b) corrupted val fakes (snow / block patches / pixelate) showing whether attention stays on the face, (c) Phase 4 before/after. One paragraph interpreting them. Files -> docs/report/fig/gradcam_*.png. -->
+![Grad-CAM grid: true/false positives and negatives per ensemble member, corrupted fakes, and the Phase 4 before/after](fig/gradcam_grid.png)
+
+TODO(fig): the interpretation paragraph (where attention sits for TP/TN/FP/FN, whether it stays on the face under snow / block patches / pixelation, and the Phase 4 before/after) is written once `fig/gradcam_grid.png` has been generated and inspected.
 
 ### 5.6 Efficiency
 
-<!-- TODO(results): T4 table for the final bundle (cold/warm wall time, load, img/s, bundle size MB, members, TTA) and the local RTX 5060 numbers; efficiency band. Safety-net v0_b0 reference: 13.8 s warm / 16.3 s cold wall on RTX 5060, 15.6 MiB bundle. -->
+| bundle | hardware | members | TTA | bundle size | load | inference | img/s | wall (3,000 images) | band |
+|---|---|---|---|---|---|---|---|---|---|
+| **`v1_ens` (final), cold** | Tesla T4 (Kaggle) | 3 | none | 410.5 MiB | 3.2 s | 102.8 s | 29.2 | **110.8 s (1.85 min)** | 20 pts |
+| `v1_ens`, warm | Tesla T4 (Kaggle) | 3 | none | 410.5 MiB | 3.1 s | 52.7 s | 57.0 | 60.4 s | 20 pts |
+| `v1_ens`, earlier session (cold / warm) | Tesla T4 (Kaggle) | 3 | none | 410.5 MiB | 3.3 s | 64.2 s | 46.7 | 72.4 s / 61.6 s | 20 pts |
+| `v1_ens` | RTX 5060 Laptop | 3 | none | 410.5 MiB | n/a | 31 s | n/a | 36-38 s | n/a |
+| `v0_b0` (safety net) | RTX 5060 Laptop | 1 | none | 15.6 MiB | 2.9 s cold | 10.7 s | 280 | 16.3 s cold / 13.8 s warm | n/a |
+
+Per member alone on the local GPU: B0 10.7 s (data-loading bound), B4 @ 320 16.1 s, ViT-B 5.8 s. The T4 is about 2-3x slower than the local GPU, and the cold run varies from 72 to 111 s with Kaggle's disk cache. Even the slowest run is well inside the < 5 min band and the 60-min hard limit. The T4 run had sm_75 support confirmed, passed the format validator, was byte-identical on re-run and gave 0 label flips against the local CSV (max |Δconfidence| 1.1e-3).
 
 ---
 
@@ -391,7 +474,11 @@ Grad-CAM is computed with `src/dfd/gradcam.py`, a manual-hook implementation tha
 - **Precision and hardware differences.** Training-time OOF predictions were computed under BF16 and the shipped script runs FP16 on GPU. These shift individual probabilities slightly while AUC moves by about 5e-5. Results on a T4 may differ from our GPU at the 1e-3 level, so a few labels very close to the threshold could flip.
 - **Rule interpretation.** We excluded CLIP/DINOv2-style backbones, which the literature suggests generalise better for deepfake detection, because the rules name ImageNet pretraining.
 
-<!-- TODO(results): final limitations from Phase 3-5 outcomes (e.g. whether big backbones beat B0, whether SBI helped, ensemble size vs time, TF export status). -->
+- **The big backbones did not beat B0 on our selection score.** The formal Phase 3 go/no-go was a no-go (best +0.0036 against a +0.01 bar), and B4 @ 320 is fragile to strong noise on its own. The ensemble gain (+0.0065 OOF AUC) is real in OOF but modest, and it comes from diversity rather than from any single stronger model.
+- **SBI and mask supervision did not help.** All SBI variants lost 0.013-0.020 selection and an SBI-only model scores 0.53 AUC, so we have no generic blending-artefact detector. Generalisation to unseen generators rests on the held-out-cluster proxy, where AUC drops from 0.889 to 0.780 (cluster 3: 0.631).
+- **Ensemble size against time.** Three members cost 110.8 s cold on a T4 (a single B0 is 13.8 s locally). That is far inside the 20-point band, but a fourth member (ConvNeXt-S, J +0.0009) was not worth the extra time.
+- **Ensemble val-C is reported only as aggregates** (mean 0.8945, worst 0.768); the per-corruption table in Appendix A covers the B0 baseline and the Phase 2 recipe.
+- **TensorFlow export.** TODO(tf): status of the optional PyTorch + TensorFlow export bonus (+1) to be filled in after the 13 Nov time-boxed attempt.
 
 ---
 
@@ -429,16 +516,16 @@ Grad-CAM is computed with `src/dfd/gradcam.py`, a manual-hook implementation tha
     python inference_script.py --test_dir $DF_DATA_ROOT/test/images --weights model_weights.pt --output predictions.csv
     python scripts/validate_predictions.py predictions.csv --test_dir $DF_DATA_ROOT/test/images
 
-<!-- TODO(results): exact final member list for dfd.ensemble, wall time per step, and the final config files of each member. -->
+Final run: `python -m dfd.ensemble --runs p2_final cnxs_final b4_320_final vitb_final` selected `p2_final`, `b4_320_final`, `vitb_final` (configs `configs/p2/p2_final.yaml`, `configs/p3/b4_320_final.yaml`, `configs/p3/vitb_final.yaml`). Wall time per step on the RTX 5060: 5-fold training 4 / 12.4 / 9.9 min per fold (B0 / B4 @ 320 / ViT-B), full-data retrains about 7-10 min each, ensemble selection a few minutes on CPU, bundling seconds, and test inference 31 s (36-38 s wall).
 
 ### 7.4 Artefacts
 
 | artefact | value |
 |---|---|
 | safety-net bundle `v0_b0` (single B0, full-data) | 15.6 MiB, SHA-256 `04b404e1f8a8ea42f49893ba8876e4165aa4621ff5d0e9396d659ca228ffa135` |
-| final bundle `model_weights.pt` | <!-- TODO(results): size + SHA-256 --> |
-| git commit of the submission | <!-- TODO(results): tag v1.0-submission --> |
-| TensorFlow export | <!-- TODO(results): SavedModel + parity numbers, or the documented time-boxed attempt --> |
+| final bundle `model_weights.pt` | 410.5 MiB, SHA-256 `ab8d0c7a6a4992275cf575244c5c20483d8554e6ca49ea32623b2425358d6c1c` (`v1_ens`) |
+| git commit of the submission | tag `v1.0-submission` (TODO(tag): to be created at submission time) |
+| TensorFlow export | TODO(tf): SavedModel and parity numbers, or the documented time-boxed attempt (13 Nov) |
 
 ---
 
@@ -480,7 +567,9 @@ Grad-CAM is computed with `src/dfd/gradcam.py`, a manual-hook implementation tha
 
 The largest gains are on noise-type corruptions the model never trained on (shot noise severity 3: 0.567 → 0.824; speckle severity 3: 0.615 → 0.812). Training on Gaussian noise and the other seen corruptions transferred to the unseen signal-dependent noise types. Pixelation remains the hardest setting.
 
-<!-- TODO(results): add the final ensemble column; val-C bar chart docs/report/fig/valc.png (B0 baseline vs Phase 2 vs final, held-out marked). -->
+**Final ensemble (aggregates).** Mean val-C AUC over all 57 settings is 0.8945 (B0 alone 0.8789, B4 alone 0.8590, ViT-B alone 0.8830). The worst setting is pixelate@3 at 0.768, against 0.742 for B0. The noise-corruption mean is 0.885 for the ensemble against 0.731 for B4 alone. The per-corruption breakdown of the ensemble was not exported.
+
+![val-C AUC: B0 baseline vs Phase 2 vs final ensemble, held-out corruptions marked](fig/valc_chart.png)
 
 ## Appendix B. Configuration files
 
