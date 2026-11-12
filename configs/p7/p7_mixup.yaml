@@ -1,0 +1,3 @@
+base: ../p2/p2_final.yaml
+description: "P7 screen: p2_final + mixup (alpha 0.2, p 0.5); folds 0-2 vs p2_final"
+mixup: {alpha: 0.2, p: 0.5}

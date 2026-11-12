@@ -1,0 +1,3 @@
+base: ../p2/p2_final.yaml
+description: "P7 screen: p2_final at input_size 288 (upsampled in forward); same batch/LR; folds 0-2 vs p2_final"
+model: {input_size: 288}

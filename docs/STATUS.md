@@ -37,6 +37,11 @@ _Session A progress (12 Nov):_ done: 22 TODO(results) filled (1d34d13); figures 
 
 **Session B:** B0 screen on folds 0,1,2 vs p2_final: `p7_mixup` (mixup, untried; PHASE2 cut) and `p7_res288` (B0 input 288, untried). Gate: `scripts/compare.py p2_final <run> --folds 0,1,2 --threshold 0.006` (Δselection >= 0.006 and > 0 on all 3 folds). If a winner: port to b4_320/vitb (5 folds) → full retrains → `dfd.ensemble` → OOF must beat 0.9074 → `scripts/bundle.py` → local validator + double run → new Kaggle kit + T4 run (<= 2.5 min cold) → hand the v2 folder to session A. If no winner: record REJECT rows and stop.
 
+_Session B progress (12 Nov 23:35 IST):_ P7 screen launched detached (PID 492922, `configs/p7/run_screen.sh`): `p7_mixup` (mixup alpha 0.2, p 0.5) then `p7_res288` (B0, `model.input_size` 288, batch size 64 unchanged), both on B0 folds 0,1,2 vs p2_final.
+- Both smoke tests passed; res288 peaked at about 4.8 GB of 8 GB.
+- Logs: `outputs/runs/p7_screen.log`, `p7_mixup.log`, `p7_res288.log`. Expected finish about 00:15-00:35 IST on 13 Nov.
+- Next: `compare.py --threshold 0.006`; a run passes only with Δselection >= 0.006 and improvement on all 3 folds. If neither passes, v1 stays the submission. Deadline for a verified v2: 13 Nov 20:00 IST.
+
 ## Notes
 - `run_queue.py` does not handle `--fold full`; use `scripts/p5_full.sh` (pattern) or `dfd.train --fold full` directly with nohup/setsid.
 - Inference per member alone (local): B0 10.7 s (data-loading bound), B4@320 16.1 s, ViT-B 5.8 s; ensemble 31 s inference.
