@@ -3,7 +3,7 @@
 **Deepfake ML Hackathon, Synergy '26 (IIIT Bangalore)** · Team **abhijayjindal604** (solo) · Technical report
 **Final build:** 12 Nov 2026 (submission `v1_ens`, three-model ensemble).
 
-Source code: `<GitHub URL>` · Weights SHA-256: see §7.4 · All numbers are grouped 5-fold cross-validation on the provided training set unless stated otherwise.
+Source code: `<GitHub URL>` TODO(github) · Weights SHA-256: see §7.4 · All numbers are grouped 5-fold cross-validation on the provided training set unless stated otherwise.
 
 ---
 
@@ -371,7 +371,7 @@ All training ran on one laptop RTX 5060 (8 GB, Blackwell) with BF16 autocast and
 | B4 @ 320 | ≈ 12.4 min |
 | ViT-B | ≈ 9.9 min |
 
-The 5-fold runs of the four Phase 3 models cost about 3.0 GPU-hours (20 + 47 + 62 + 50 min), and the full-data retrains about 0.5 GPU-hours. The earlier exploratory runs were logged in `docs/EXPERIMENTS.md` but not timed individually, so we do not claim a project total.
+Measured from file timestamps (training loop only, config written to final `metrics.csv`), the 5-fold runs of the four Phase 3 backbones took 12.9 (B0) + 33.9 (ConvNeXt-S) + 47.4 (B4 @ 320) + 38.2 (ViT-B) = 132 min, about 2.2 GPU-hours. Including the per-fold evaluation and val-C passes (the per-fold figures in the table above), the total was roughly 3 GPU-hours. The four full-data retrains took 2.7 + 7.0 + 10.1 + 8.0 = 28 min (about 0.5 GPU-hours). Earlier exploratory runs were logged in `docs/EXPERIMENTS.md` but not timed individually, so we do not claim a project total.
 
 ---
 
@@ -445,9 +445,9 @@ Grad-CAM is computed with `src/dfd/gradcam.py`, a manual-hook implementation tha
 - **ViT:** it is taken on the residual stream entering the last block, with patch tokens reshaped to 14×14.
 - **Target:** the target score is the evidence for the predicted class.
 
-![Grad-CAM grid: true/false positives and negatives per ensemble member, corrupted fakes, and the Phase 4 before/after](fig/gradcam_grid.png)
+![Grad-CAM (evidence for the predicted class) on eight fold-0 validation images (four real, four fake); rows are the input, B0, B4 @ 320 and ViT-B/16, with p(fake) in each caption](fig/gradcam_grid.png)
 
-TODO(fig): the interpretation paragraph (where attention sits for TP/TN/FP/FN, whether it stays on the face under snow / block patches / pixelation, and the Phase 4 before/after) is written once `fig/gradcam_grid.png` has been generated and inspected.
+**What the maps show.** On clean-looking images all three members concentrate on the central face (eyes, nose, mouth). This is the face-swap region, which is what we want. On the two real faces with confident low scores (columns 1-2), B0 and B4 put a compact blob on the central face and ViT spreads over the whole face. The CNN maps are smooth blobs, while ViT's are more diffuse and patchy, and on the dark real image (column 4) ViT fires on a few isolated facial points. The members largely agree on the fakes (p between 0.65 and 0.98), but not always where they look. On the second fake (column 6, dark, low contrast) B0 attends to a spot left of the face, B4 to a small point at the top right, and ViT to a scattered background pattern, so the map there is weak evidence that any of them found a manipulation artefact. The block-patch real image (column 4) is the clearest near-miss: B4 splits its attention between the face and the patch and scores p=0.49 and ViT p=0.44 on a real face, while B0 stays on the face (p=0.25). So a corruption can pull attention away from the face and push a real image toward the boundary. Grad-CAM is a qualitative check on eight validation images from one fold. It supports "the models mostly look at the face region", not a claim that they have learned generation-specific artefacts, and we did not generate a Phase 4 before/after panel.
 
 ### 5.6 Efficiency
 
