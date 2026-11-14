@@ -14,7 +14,11 @@ The method and every decision behind it are in the technical report (`docs/repor
 |---|---|---|---|
 | EfficientNet-B0 baseline | 0.8715 | 0.839 | 0.791 |
 | Phase 2 recipe (`configs/p2/p2_final.yaml`) | 0.8964 | 0.883 | 0.871 |
-| **final submission** | <!-- TODO(results) --> | | |
+| **final submission `v1_ens`** (EfficientNet-B0 + EfficientNet-B4@320 + ViT-B/16, equal-weight logit average) | **0.9074** (95 % CI 0.8997-0.9145) | **0.8945** (mean of all 57 settings) | n/a |
+
+The ensemble's val-C mean covers all 57 settings, seen and held-out together; we did not export a per-group split for it. Its worst setting is pixelate at severity 3, with AUC 0.768. The F1-maximising threshold on the OOF predictions is 0.4282 (F1 0.878, accuracy 0.876). The CI comes from a group bootstrap over the CV similarity groups (`scripts/bootstrap_ci.py`).
+
+**Submission files.** [Public Drive folder](https://drive.google.com/drive/folders/1Cj5WYSFJubdwPh2YjDX7Z2GTmid00oEQ?usp=sharing): `model_weights.pt`, `predictions.csv`, `report.pdf` (2-page summary), `technical_report.pdf` (full report). The submitted code is tag `v1.0-submission`.
 
 ---
 
@@ -89,7 +93,8 @@ python inference_script.py --test_dir ./test/images/ --weights ./model_weights.p
 
 - **Measured.** The safety-net single-B0 bundle took 13.8 s wall time for the 3,000 test images on an RTX 5060 Laptop GPU.
 
-<!-- TODO(results): T4 wall time of the final bundle; bundle size + SHA-256; Drive link to model_weights.pt. -->
+- **Final bundle `v1_ens` on a Tesla T4 (Kaggle).** 3,000 images in 110.8 s cold (1.85 min) and 60.4 s warm, which is inside the top efficiency band (< 5 min). The same CSV came out byte-identical on re-run. On the RTX 5060 Laptop GPU it takes 36-38 s.
+- **Weights.** `model_weights.pt` is 410.5 MiB, SHA-256 `ab8d0c7a6a4992275cf575244c5c20483d8554e6ca49ea32623b2425358d6c1c`. It is too large for git, so download it from the [Drive folder](https://drive.google.com/drive/folders/1Cj5WYSFJubdwPh2YjDX7Z2GTmid00oEQ?usp=sharing).
 
 ## 4. Train from scratch
 
@@ -165,6 +170,7 @@ DFD_DEVICE=cpu python -m dfd.train ...           # same, on CPU (slow; for tests
 | `python scripts/parity_test.py --run p2_final --fold 0 [--device cuda]` | inference script vs training code: logit parity, robustness folder, byte-identical re-run |
 | `python scripts/check_env.py` | GPU / torch / BF16 / timm sanity check (expects the RTX 50xx training GPU) |
 | `python scripts/kaggle/make_kit.py ...` | T4 timing kit for a Kaggle notebook (see `scripts/kaggle/README.md`) |
+| `python scripts/bootstrap_ci.py` | group-bootstrap 95 % CI of the ensemble OOF AUC (CPU, about 1 min) |
 | `python scripts/build_report.py` | `docs/report/report.md` → PDF (headless Chrome/Chromium; see the script's docstring) |
 
 ## 5. Repository map
@@ -190,7 +196,7 @@ src/dfd/
 configs/                   one YAML per experiment (`base:` inheritance)
 queues/                    run_queue.py queue files
 scripts/                   run_queue, compare, bundle, validate_predictions, parity_test, plot_curves,
-                           build_report, check_env, kaggle/ (T4 timing kit)
+                           bootstrap_ci, build_report, check_env, kaggle/ (T4 timing kit)
 data/                      folds, groups, pairs, masks (derived from train metadata only)
 docs/                      PLAN.md, PHASE1-6.md (plans), EXPERIMENTS.md (every run + decision), report/
 ```

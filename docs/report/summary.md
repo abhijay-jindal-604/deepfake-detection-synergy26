@@ -40,7 +40,7 @@ Groups come from perceptual hashes plus ImageNet embeddings, merged with union-f
 | decision threshold (OOF F1-max) / F1 / accuracy | n/a | n/a | **0.4282** / 0.8784 / 0.8764 |
 | inference, 3,000 images, Tesla T4 (Kaggle) | n/a | n/a | **110.8 s cold (1.85 min), 60.4 s warm** |
 
-Per-fold ensemble AUC is 0.894 / 0.914 / 0.921 / 0.890 / 0.919. The T4 time is inside the top efficiency band (under 5 min). ![Per-corruption val-C AUC for the three shipped members (left; * = held-out type) and pooled OOF AUC and val-C for members and ensemble (right)](fig/valc_chart.png)
+Per-fold ensemble AUC is 0.894 / 0.914 / 0.921 / 0.890 / 0.919; a group bootstrap over the CV similarity groups gives a 95 % CI of 0.8997-0.9145 for the OOF AUC. The T4 time is inside the top efficiency band (under 5 min). ![Per-corruption val-C AUC for the three shipped members (left; * = held-out type) and pooled OOF AUC and val-C for members and ensemble (right)](fig/valc_chart.png)
 
 Grad-CAM maps on validation images show the members mostly attend to the central face region.
 

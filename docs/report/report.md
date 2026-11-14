@@ -37,7 +37,7 @@ The baseline was scored at its best epoch, which flatters it; `p2_final` was sco
 
 | metric (grouped 5-fold, 7,000 OOF predictions) | best single member | **final ensemble** |
 |---|---|---|
-| OOF AUC-ROC | 0.9009 (B4 @ 320) | **0.9074** |
+| OOF AUC-ROC | 0.9009 (B4 @ 320) | **0.9074** (95 % CI 0.8997-0.9145, group bootstrap) |
 | mean val-C AUC (all 57 settings) | 0.8848 (ConvNeXt-S, not shipped) | **0.8945** |
 | worst val-C setting | 0.742 (B0, pixelate@3) | **0.768** (pixelate@3) |
 | objective J = 0.5 × OOF AUC + 0.5 × val-C | 0.8910 (ConvNeXt-S) | **0.9010** |
@@ -45,7 +45,7 @@ The baseline was scored at its best epoch, which flatters it; `p2_final` was sco
 | inference, 3,000 test images, **Tesla T4 (Kaggle)** | n/a | **110.8 s cold (1.85 min), 60.4 s warm**; 20-pt band (< 5 min) |
 | bundle `model_weights.pt` | 15.6 MiB (B0 alone) | **410.5 MiB** (FP32, 3 members) |
 
-The ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member, and it masks B4's weakness to strong noise (val-C noise-mean 0.885 against 0.731 for B4 alone).
+The CI comes from 1,000 bootstrap resamples of the 6,345 CV similarity groups (`data/folds.csv`), so real/fake pairs from the same source photo are always resampled together. The ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member, and it masks B4's weakness to strong noise (val-C noise-mean 0.885 against 0.731 for B4 alone).
 ![Architecture overview: three members, per-member temperature, logit average, ensemble calibration, threshold](fig/architecture.png)
 
 ---
@@ -377,6 +377,8 @@ Measured from file timestamps (training loop only, config written to final `metr
 
 ## 5. Results
 
+Our val-C suite is deliberately harsh: 19 corruptions × 3 severities, with pixelation (up to 12 px blocks) and occlusions (up to 6 grey cut-outs or 30 coloured block patches) at full strength. Its worst-case numbers (for example pixelate@3 = 0.768) are therefore not comparable to results on milder corruption benchmarks.
+
 ### 5.1 Phase 1 → Phase 2 (EfficientNet-B0, 5 folds)
 
 | run | clean AUC (fold mean ± sd) | OOF AUC (7,000) | val-C seen | val-C held-out | worst cell | selection |
@@ -431,11 +433,11 @@ Content-matched reals give the same picture (0.870 / 0.866 / 0.895 / 0.651), so 
 | best single by OOF AUC (B4 @ 320) | 0.9009 | 0.8590 | 0.8800 |
 | best single by J (ConvNeXt-S) | 0.8972 | 0.8848 | 0.8910 |
 | 4 members, equal weights | 0.9072 | 0.8966 | 0.9019 |
-| **3 members B0 + B4 + ViT-B, equal weights (shipped)** | **0.9074** | **0.8945** | **0.9010** |
+| **3 members B0 + B4 + ViT-B, equal weights (shipped)** | **0.9074** (95 % CI 0.8997-0.9145) | **0.8945** | **0.9010** |
 | same, tuned weights | n/a | n/a | 0.9010 (+0.00002, rejected) |
 | B0 + ViT-B (2 members) | 0.9052 | 0.8925 | 0.8988 |
 
-The shipped ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member. The optimism check on folds 3-4 never ran because tuned weights did not clear the 0.003 gain bar. **Flip-TTA** gives J 0.9018 against 0.9019 without it, so it is rejected (and would double the forward passes). The final threshold is 0.4282 with F1 0.8784 and accuracy 0.8764 (§3.4). Per-fold AUC is 0.894 / 0.914 / 0.921 / 0.890 / 0.919.
+The shipped ensemble adds +0.0065 OOF AUC and +0.010 J over the best single member. A 95 % confidence interval for its OOF AUC, from a group bootstrap (1,000 resamples of the 6,345 CV similarity groups, seed 42), is **0.8997-0.9145** (bootstrap sd 0.004). The optimism check on folds 3-4 never ran because tuned weights did not clear the 0.003 gain bar. **Flip-TTA** gives J 0.9018 against 0.9019 without it, so it is rejected (and would double the forward passes). The final threshold is 0.4282 with F1 0.8784 and accuracy 0.8764 (§3.4). Per-fold AUC is 0.894 / 0.914 / 0.921 / 0.890 / 0.919.
 
 ### 5.5 Explainability (Grad-CAM)
 
@@ -471,6 +473,7 @@ Per member alone on the local GPU: B0 10.7 s (data-loading bound), B4 @ 320 16.1
 - **Full-data models have no validation set of their own.** Their quality is inferred from the 5-fold runs of the same recipe plus a training-curve match.
 - **Many decisions on a small dataset.** Greedy search over about 15 comparisons on three folds can overfit our folds despite the 0.006 / 3-of-3 rule. Phase 3 LRs were chosen on a single fold. Phase 2 ran on one seed per configuration, apart from the noise-floor run.
 - **Label noise** is acknowledged by the organisers and left untreated beyond label smoothing; no data was removed.
+- **No label-noise pruning.** We did not try confident learning (or any other method that uses OOF predictions to find and drop or relabel likely mislabelled training images), so some of the residual error may be label noise we could have cleaned.
 - **Precision and hardware differences.** Training-time OOF predictions were computed under BF16 and the shipped script runs FP16 on GPU. These shift individual probabilities slightly while AUC moves by about 5e-5. Results on a T4 may differ from our GPU at the 1e-3 level, so a few labels very close to the threshold could flip.
 - **Rule interpretation.** We excluded CLIP/DINOv2-style backbones, which the literature suggests generalise better for deepfake detection, because the rules name ImageNet pretraining.
 
@@ -478,7 +481,7 @@ Per member alone on the local GPU: B0 10.7 s (data-loading bound), B4 @ 320 16.1
 - **SBI and mask supervision did not help.** All SBI variants lost 0.013-0.020 selection and an SBI-only model scores 0.53 AUC, so we have no generic blending-artefact detector. Generalisation to unseen generators rests on the held-out-cluster proxy, where AUC drops from 0.889 to 0.780 (cluster 3: 0.631).
 - **Ensemble size against time.** Three members cost 110.8 s cold on a T4 (a single B0 is 13.8 s locally). That is far inside the 20-point band, but a fourth member (ConvNeXt-S, J +0.0009) was not worth the extra time.
 - **Ensemble val-C is reported only as aggregates** (mean 0.8945, worst 0.768); the per-corruption table in Appendix A covers the B0 baseline and the Phase 2 recipe.
-- **TensorFlow export.** TODO(tf): status of the optional PyTorch + TensorFlow export bonus (+1) to be filled in after the 13 Nov time-boxed attempt.
+- **No TensorFlow export.** We ship PyTorch only and do not claim the optional PyTorch + TensorFlow bonus (+1). We spent the remaining time on the P7 experiments and on verifying reproducibility. Porting three `timm` backbones and checking that the outputs match was not worth one bonus point.
 
 ---
 
@@ -524,8 +527,8 @@ Final run: `python -m dfd.ensemble --runs p2_final cnxs_final b4_320_final vitb_
 |---|---|
 | safety-net bundle `v0_b0` (single B0, full-data) | 15.6 MiB, SHA-256 `04b404e1f8a8ea42f49893ba8876e4165aa4621ff5d0e9396d659ca228ffa135` |
 | final bundle `model_weights.pt` | 410.5 MiB, SHA-256 `ab8d0c7a6a4992275cf575244c5c20483d8554e6ca49ea32623b2425358d6c1c` (`v1_ens`) |
-| git commit of the submission | tag `v1.0-submission` (TODO(tag): to be created at submission time) |
-| TensorFlow export | TODO(tf): SavedModel and parity numbers, or the documented time-boxed attempt (13 Nov) |
+| git commit of the submission | tag `v1.0-submission` in the public GitHub repository |
+| TensorFlow export | none (PyTorch only; see §6) |
 
 ---
 
